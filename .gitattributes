@@ -1,0 +1,2 @@
+# Generated browser bundle includes the original font's whitespace verbatim.
+public/renderer/worker.js linguist-generated=true -whitespace

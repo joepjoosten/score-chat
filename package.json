@@ -1,0 +1,39 @@
+{
+  "name": "score-chat",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "check": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "test:e2e": "playwright test",
+    "renderer:sync": "node scripts/sync-renderer.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "dependencies": {
+    "@effect/ai-openrouter": "4.0.0-rc.112",
+    "@effect/atom-react": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.112",
+    "lucide-react": "^0.468.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "esbuild": "^0.25.0",
+    "prettier": "^3.6.0",
+    "typescript": "~5.9.3",
+    "vite": "^7.1.0"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

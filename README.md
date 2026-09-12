@@ -13,7 +13,8 @@ npm run dev
 
 Open **Settings**, enter an OpenRouter API key and a model ID with tool-calling support, then save. `openrouter/auto` is the default. No API key is needed to edit, import, render, or export music.
 
-- Switch between **Sheet music** and **LilyPond**; edits render automatically.
+- Switch between **Sheet music** and **LilyPond**; edits render automatically. The score fills the window below a single toolbar.
+- The assistant lives in a floating panel over the score. Click its header (or press Escape in the composer) to collapse it to just the message box; sending a message reopens it.
 - Open a `.ly` file or download the current source. Each rendered page has an SVG download.
 - Ask the assistant to explain or edit music. Its Effect AI tools read, validate, and update the score in the browser. Invalid updates are rejected and returned to the model as diagnostics. Each message allows up to eight model steps; Stop cancels work.
 - Undo restores up to 20 score replacements made by the agent or file imports during the current session.

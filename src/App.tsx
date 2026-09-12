@@ -5,6 +5,7 @@ import {
   ArrowUp,
   Check,
   ChevronDown,
+  ChevronUp,
   Code2,
   FileMusic,
   FileUp,
@@ -15,6 +16,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   Square,
+  Trash2,
   Undo2,
   X,
   ZoomIn,
@@ -147,6 +149,7 @@ export function App() {
   const [messages, setMessages] = useAtom(messagesAtom)
   const storageError = useAtomValue(storageErrorAtom)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [chatOpen, setChatOpen] = useState(true)
   const [rendered, setRendered] = useState<RenderResult>({
     pages: [],
     errors: [],
@@ -222,6 +225,7 @@ export function App() {
     setInput('')
     setError('')
     setBusy(true)
+    setChatOpen(true)
     const controller = new AbortController()
     abortRef.current = controller
     const assistantId = crypto.randomUUID()
@@ -248,8 +252,12 @@ export function App() {
               : [...current, { id: assistantId, role: 'assistant', text }]
           }),
       })
-    } catch {
+    } catch (cause) {
       // Provider errors can contain request details; never surface or log the API key.
+      console.error(
+        'Assistant request failed:',
+        String(cause).replaceAll(settings.apiKey, '[redacted]'),
+      )
       setError(
         controller.signal.aborted
           ? 'Stopped. Any completed score edits are still available to undo.'
@@ -265,336 +273,354 @@ export function App() {
 
   return (
     <div className="app-shell">
-      <header className="app-header">
-        <a className="brand" href="./" aria-label="Score Chat home">
-          <span className="brand-icon">
-            <Music2 size={22} />
-          </span>
-          <span>
-            score<span className="brand-light">chat</span>
-            <span className="beta">BETA</span>
-          </span>
-        </a>
-        <div className="header-right">
-          <span className="local-badge">
-            <span className="status-dot" /> Local workspace
-          </span>
-          <button
-            className="settings-button"
-            onClick={() => setSettingsOpen(true)}
-            disabled={busy}
-          >
-            <Settings2 size={17} />
-            <span>Settings</span>
-          </button>
-        </div>
-      </header>
-      {storageError && (
-        <div className="storage-warning" role="alert">
-          {storageError}
-        </div>
-      )}
-      <main className="workspace">
-        <div className="workspace-heading">
-          <div className="score-heading">
-            <span className="score-file-icon">
-              <FileMusic size={22} />
+      <header className="toolbar">
+        <div className="toolbar-group toolbar-left">
+          <a className="brand" href="./" aria-label="Score Chat home">
+            <span className="brand-icon">
+              <Music2 size={18} />
             </span>
-            <div>
-              <h1>{title}</h1>
-              <span className="muted small">
-                Your music, a conversation away.
-              </span>
-            </div>
-          </div>
-          <div className="file-actions">
-            <button
-              className="quiet-button"
-              disabled={busy}
-              onClick={() => fileInput.current?.click()}
-            >
-              <FileUp size={16} />
-              <span>Open .ly</span>
-            </button>
-            <button
-              className="outlined-button"
-              onClick={() => download('score.ly', source, 'text/plain')}
-            >
-              <ArrowDownToLine size={16} />
-              <span>Download .ly</span>
-            </button>
-          </div>
-        </div>
-        <input
-          ref={fileInput}
-          type="file"
-          accept=".ly,text/plain"
-          className="visually-hidden"
-          aria-label="Import LilyPond file"
-          onChange={async (event) => {
-            const file = event.target.files?.[0]
-            event.target.value = ''
-            if (!file) return
-            if (file.size > MAX_SOURCE_LENGTH) {
-              setError('Choose a LilyPond file smaller than 150 KB.')
-              return
-            }
-            try {
-              const contents = await file.text()
-              replaceScore(contents)
-              setError('')
-            } catch {
-              setError('Could not read this file.')
-            }
-          }}
-        />
-        <section className="score-workspace" aria-label="Music workspace">
-          <div className="score-toolbar">
-            <div className="tabs" role="tablist" aria-label="Score view">
-              <button
-                id="score-tab"
-                role="tab"
-                aria-selected={settings.view === 'score'}
-                aria-controls="score-panel"
-                onClick={() => setSettings({ ...settings, view: 'score' })}
-              >
-                <Music2 size={16} />
-                Sheet music
-              </button>
-              <button
-                id="source-tab"
-                role="tab"
-                aria-selected={settings.view === 'source'}
-                aria-controls="source-panel"
-                onClick={() => setSettings({ ...settings, view: 'source' })}
-              >
-                <Code2 size={16} />
-                LilyPond
-              </button>
-            </div>
-            <div className="view-actions">
-              <button
-                className="icon-button"
-                title="Undo last score replacement"
-                aria-label="Undo last score replacement"
-                disabled={busy || !undo.length}
-                onClick={() => {
-                  const previous = undo.at(-1)
-                  if (previous !== undefined) {
-                    setSource(previous)
-                    setUndo(undo.slice(0, -1))
-                  }
-                }}
-              >
-                <Undo2 size={16} />
-              </button>
-              <span className="toolbar-divider" />
-              {settings.view === 'score' ? (
-                <>
-                  <button
-                    className="icon-button"
-                    aria-label="Zoom out"
-                    disabled={zoom <= 45}
-                    onClick={() => setZoom(Math.max(45, zoom - 10))}
-                  >
-                    <ZoomOut size={16} />
-                  </button>
-                  <span className="zoom-label">{zoom}%</span>
-                  <button
-                    className="icon-button"
-                    aria-label="Zoom in"
-                    disabled={zoom >= 145}
-                    onClick={() => setZoom(Math.min(145, zoom + 10))}
-                  >
-                    <ZoomIn size={16} />
-                  </button>
-                </>
-              ) : (
-                <span className="small muted">LilyPond 2.24.4</span>
-              )}
-            </div>
-          </div>
-          {settings.view === 'source' ? (
-            <div
-              id="source-panel"
-              role="tabpanel"
-              aria-labelledby="source-tab"
-              className="source-panel"
-            >
-              <div
-                ref={editorGutter}
-                className="editor-gutter"
-                aria-hidden="true"
-              >
-                {source.split('\n').map((_, index) => (
-                  <div key={index}>{index + 1}</div>
-                ))}
-              </div>
-              <textarea
-                aria-label="LilyPond source"
-                className="source-editor"
-                onScroll={(event) => {
-                  if (editorGutter.current)
-                    editorGutter.current.scrollTop =
-                      event.currentTarget.scrollTop
-                }}
-                spellCheck={false}
-                value={source}
-                readOnly={busy}
-                maxLength={MAX_SOURCE_LENGTH}
-                onChange={(e) => setSource(e.target.value)}
-              />
-            </div>
-          ) : (
-            <div
-              id="score-panel"
-              role="tabpanel"
-              aria-labelledby="score-tab"
-              className="score-canvas"
-              aria-busy={rendering}
-            >
-              {rendering && !rendered.pages.length && (
-                <div className="empty-score">
-                  <LoaderCircle className="spin" size={24} />
-                  <p>Engraving your music…</p>
-                </div>
-              )}
-              {rendered.pages.map((page, index) => (
-                <div
-                  key={index}
-                  className={`sheet-page ${fresh ? '' : 'stale'}`}
-                  style={{
-                    width: `min(${zoom * 8.6}px, ${(zoom / 85) * 100}%)`,
-                  }}
-                >
-                  <img
-                    alt={`Sheet music, page ${index + 1}`}
-                    src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(page)}`}
-                  />
-                  <button
-                    className="page-download"
-                    disabled={!fresh}
-                    onClick={() =>
-                      download(`score-${index + 1}.svg`, page, 'image/svg+xml')
-                    }
-                  >
-                    <ArrowDownToLine size={14} /> SVG · page {index + 1}
-                  </button>
-                </div>
-              ))}
-              {!rendering && !rendered.pages.length && (
-                <div className="empty-score">
-                  <FileMusic size={32} />
-                  <p>This score needs a little attention.</p>
-                  <button
-                    className="outlined-button"
-                    onClick={() => setSettings({ ...settings, view: 'source' })}
-                  >
-                    Edit LilyPond source
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-          {rendered.errors.length > 0 && !rendering && (
-            <div className="render-errors" role="alert">
-              {rendered.errors.map((message, index) => (
-                <div key={index}>{message}</div>
-              ))}
-            </div>
-          )}
-          <div className="score-status">
-            <span aria-live="polite">
+            <span className="brand-name">
+              score<span className="brand-light">chat</span>
+            </span>
+          </a>
+          <span className="toolbar-divider" />
+          <div className="score-title">
+            <h1 title={title}>{title}</h1>
+            <span className="score-status" aria-live="polite">
               {rendering ? (
                 <>
-                  <LoaderCircle size={12} className="spin" /> Rendering…
+                  <LoaderCircle size={11} className="spin" /> Rendering…
                 </>
               ) : rendered.errors.length ? (
-                'Could not render this source'
+                <span className="status-bad">Could not render this source</span>
               ) : (
                 <>
-                  <Check size={13} /> {rendered.pages.length} page
+                  <Check size={11} /> {rendered.pages.length} page
                   {rendered.pages.length === 1 ? '' : 's'} · rendered locally
                 </>
               )}
             </span>
-            <span>LilyPond → SVG</span>
           </div>
-        </section>
-        <section className="chat-panel" aria-label="Music assistant">
-          <div className="chat-heading">
-            <div>
-              <span className="assistant-icon">
-                <Sparkles size={16} />
-              </span>
-              <h2>Music assistant</h2>
-              <span className="chat-tag">YOUR COMPOSING PARTNER</span>
-            </div>
-            <button
-              className="quiet-button small"
-              disabled={busy || !messages.length}
-              onClick={() => {
-                setMessages([])
-                setError('')
-              }}
-            >
-              Clear chat
-            </button>
-          </div>
-          <div
-            className="chat-messages"
-            role="log"
-            aria-label="Conversation"
-            aria-live="polite"
+        </div>
+        <div className="tabs" role="tablist" aria-label="Score view">
+          <button
+            id="score-tab"
+            role="tab"
+            aria-label="Sheet music"
+            aria-selected={settings.view === 'score'}
+            aria-controls="score-panel"
+            onClick={() => setSettings({ ...settings, view: 'score' })}
           >
-            {!messages.length && (
-              <div className="chat-welcome">
-                <p>A new idea starts with a note.</p>
-                <span>
-                  Ask me to write a melody, change a key, or help shape your
-                  score.
-                </span>
-                <div className="suggestions">
-                  {[
-                    'Make this melody more playful',
-                    'Transpose to G major',
-                    'Explain this score',
-                  ].map((text) => (
-                    <button
-                      key={text}
-                      onClick={() => {
-                        setInput(text)
-                        chatInput.current?.focus()
-                      }}
-                    >
-                      {text}
-                      <ArrowUp size={13} />
-                    </button>
-                  ))}
-                </div>
+            <Music2 size={15} />
+            <span>Sheet music</span>
+          </button>
+          <button
+            id="source-tab"
+            role="tab"
+            aria-label="LilyPond"
+            aria-selected={settings.view === 'source'}
+            aria-controls="source-panel"
+            onClick={() => setSettings({ ...settings, view: 'source' })}
+          >
+            <Code2 size={15} />
+            <span>LilyPond</span>
+          </button>
+        </div>
+        <div className="toolbar-group toolbar-right">
+          <button
+            className="icon-button"
+            title="Undo last score replacement"
+            aria-label="Undo last score replacement"
+            disabled={busy || !undo.length}
+            onClick={() => {
+              const previous = undo.at(-1)
+              if (previous !== undefined) {
+                setSource(previous)
+                setUndo(undo.slice(0, -1))
+              }
+            }}
+          >
+            <Undo2 size={16} />
+          </button>
+          {settings.view === 'score' && (
+            <div className="zoom-controls">
+              <button
+                className="icon-button"
+                aria-label="Zoom out"
+                disabled={zoom <= 45}
+                onClick={() => setZoom(Math.max(45, zoom - 10))}
+              >
+                <ZoomOut size={16} />
+              </button>
+              <span className="zoom-label">{zoom}%</span>
+              <button
+                className="icon-button"
+                aria-label="Zoom in"
+                disabled={zoom >= 145}
+                onClick={() => setZoom(Math.min(145, zoom + 10))}
+              >
+                <ZoomIn size={16} />
+              </button>
+            </div>
+          )}
+          <span className="toolbar-divider" />
+          <button
+            className="icon-button"
+            title="Open .ly"
+            aria-label="Open .ly"
+            disabled={busy}
+            onClick={() => fileInput.current?.click()}
+          >
+            <FileUp size={16} />
+          </button>
+          <button
+            className="icon-button"
+            title="Download .ly"
+            aria-label="Download .ly"
+            onClick={() => download('score.ly', source, 'text/plain')}
+          >
+            <ArrowDownToLine size={16} />
+          </button>
+          <span className="toolbar-divider" />
+          <button
+            className="icon-button"
+            title="Settings"
+            aria-label="Settings"
+            onClick={() => setSettingsOpen(true)}
+            disabled={busy}
+          >
+            <Settings2 size={16} />
+          </button>
+        </div>
+      </header>
+      <input
+        ref={fileInput}
+        type="file"
+        accept=".ly,text/plain"
+        className="visually-hidden"
+        aria-label="Import LilyPond file"
+        onChange={async (event) => {
+          const file = event.target.files?.[0]
+          event.target.value = ''
+          if (!file) return
+          if (file.size > MAX_SOURCE_LENGTH) {
+            setError('Choose a LilyPond file smaller than 150 KB.')
+            setChatOpen(true)
+            return
+          }
+          try {
+            const contents = await file.text()
+            replaceScore(contents)
+            setError('')
+          } catch {
+            setError('Could not read this file.')
+            setChatOpen(true)
+          }
+        }}
+      />
+      <main
+        className="stage"
+        data-chat={chatOpen ? 'open' : 'closed'}
+        aria-label="Music workspace"
+      >
+        {storageError && (
+          <div className="storage-warning" role="alert">
+            {storageError}
+          </div>
+        )}
+        {rendered.errors.length > 0 && !rendering && (
+          <div className="render-errors" role="alert">
+            {rendered.errors.map((message, index) => (
+              <div key={index}>{message}</div>
+            ))}
+          </div>
+        )}
+        {settings.view === 'source' ? (
+          <div
+            id="source-panel"
+            role="tabpanel"
+            aria-labelledby="source-tab"
+            className="source-panel"
+          >
+            <div
+              ref={editorGutter}
+              className="editor-gutter"
+              aria-hidden="true"
+            >
+              {source.split('\n').map((_, index) => (
+                <div key={index}>{index + 1}</div>
+              ))}
+            </div>
+            <textarea
+              aria-label="LilyPond source"
+              className="source-editor"
+              onScroll={(event) => {
+                if (editorGutter.current)
+                  editorGutter.current.scrollTop = event.currentTarget.scrollTop
+              }}
+              spellCheck={false}
+              value={source}
+              readOnly={busy}
+              maxLength={MAX_SOURCE_LENGTH}
+              onChange={(e) => setSource(e.target.value)}
+            />
+          </div>
+        ) : (
+          <div
+            id="score-panel"
+            role="tabpanel"
+            aria-labelledby="score-tab"
+            className="score-canvas"
+            aria-busy={rendering}
+          >
+            {rendering && !rendered.pages.length && (
+              <div className="empty-score">
+                <LoaderCircle className="spin" size={24} />
+                <p>Engraving your music…</p>
               </div>
             )}
-            {messages.map((message) => (
-              <div key={message.id} className={`message ${message.role}`}>
-                <span className="message-author">
-                  {message.role === 'assistant' ? (
-                    <Sparkles size={14} />
-                  ) : (
-                    <MessageSquare size={14} />
-                  )}
-                  {message.role === 'assistant' ? 'Assistant' : 'You'}
-                </span>
-                <div>{message.text}</div>
+            {rendered.pages.map((page, index) => (
+              <div
+                key={index}
+                className={`sheet-page ${fresh ? '' : 'stale'}`}
+                style={{
+                  width: `min(${zoom * 8.6}px, ${(zoom / 85) * 100}%)`,
+                }}
+              >
+                <img
+                  alt={`Sheet music, page ${index + 1}`}
+                  src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(page)}`}
+                />
+                <button
+                  className="page-download"
+                  disabled={!fresh}
+                  onClick={() =>
+                    download(`score-${index + 1}.svg`, page, 'image/svg+xml')
+                  }
+                >
+                  <ArrowDownToLine size={14} /> SVG · page {index + 1}
+                </button>
               </div>
             ))}
-            {busy && (
-              <div className="agent-status">
-                <LoaderCircle size={14} className="spin" />
-                {agentStatus || 'Connecting…'}
+            {!rendering && !rendered.pages.length && (
+              <div className="empty-score">
+                <FileMusic size={32} />
+                <p>This score needs a little attention.</p>
+                <button
+                  className="outlined-button"
+                  onClick={() => setSettings({ ...settings, view: 'source' })}
+                >
+                  Edit LilyPond source
+                </button>
               </div>
             )}
-            <div ref={chatEnd} />
           </div>
+        )}
+        <section
+          className="chat-dock"
+          aria-label="Music assistant"
+          data-open={chatOpen}
+        >
+          <div className="chat-heading">
+            <button
+              type="button"
+              className="chat-toggle"
+              aria-expanded={chatOpen}
+              aria-controls="chat-conversation"
+              onClick={() => setChatOpen(!chatOpen)}
+            >
+              <span className="assistant-icon">
+                <Sparkles size={14} />
+              </span>
+              <span className="chat-heading-text">
+                <h2>Assistant</h2>
+                <span className="chat-subtitle">
+                  {busy ? (
+                    <>
+                      <LoaderCircle size={11} className="spin" />
+                      {agentStatus || 'Connecting…'}
+                    </>
+                  ) : messages.length ? (
+                    `${messages.length} message${messages.length === 1 ? '' : 's'}`
+                  ) : (
+                    'Your composing partner'
+                  )}
+                </span>
+              </span>
+              {chatOpen ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+            </button>
+            {chatOpen && (
+              <button
+                className="icon-button"
+                title="Clear chat"
+                aria-label="Clear chat"
+                disabled={busy || !messages.length}
+                onClick={() => {
+                  setMessages([])
+                  setError('')
+                }}
+              >
+                <Trash2 size={15} />
+              </button>
+            )}
+          </div>
+          {chatOpen && (
+            <div
+              id="chat-conversation"
+              className="chat-messages"
+              role="log"
+              aria-label="Conversation"
+              aria-live="polite"
+            >
+              {!messages.length && (
+                <div className="chat-welcome">
+                  <p>A new idea starts with a note.</p>
+                  <span>
+                    Ask me to write a melody, change a key, or help shape your
+                    score.
+                  </span>
+                  <div className="suggestions">
+                    {[
+                      'Make this melody more playful',
+                      'Transpose to G major',
+                      'Explain this score',
+                    ].map((text) => (
+                      <button
+                        key={text}
+                        onClick={() => {
+                          setInput(text)
+                          chatInput.current?.focus()
+                        }}
+                      >
+                        {text}
+                        <ArrowUp size={13} />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {messages.map((message) => (
+                <div key={message.id} className={`message ${message.role}`}>
+                  <span className="message-author">
+                    {message.role === 'assistant' ? (
+                      <Sparkles size={14} />
+                    ) : (
+                      <MessageSquare size={14} />
+                    )}
+                    {message.role === 'assistant' ? 'Assistant' : 'You'}
+                  </span>
+                  <div>{message.text}</div>
+                </div>
+              ))}
+              {busy && (
+                <div className="agent-status">
+                  <LoaderCircle size={14} className="spin" />
+                  {agentStatus || 'Connecting…'}
+                </div>
+              )}
+              <div ref={chatEnd} />
+            </div>
+          )}
           {error && (
             <div className="chat-error" role="alert">
               {error}
@@ -624,6 +650,8 @@ export function App() {
                 ) {
                   event.preventDefault()
                   void send()
+                } else if (event.key === 'Escape' && chatOpen) {
+                  setChatOpen(false)
                 }
               }}
             />
@@ -638,6 +666,9 @@ export function App() {
                 {settings.apiKey ? settings.model : 'Connect OpenRouter'}
                 <ChevronDown size={12} />
               </button>
+              <span className="composer-hint">
+                Enter to send · Shift + Enter for a new line
+              </span>
               {busy ? (
                 <button
                   type="button"
@@ -659,13 +690,12 @@ export function App() {
               )}
             </div>
           </form>
-          <div className="chat-footer">
-            <span>
+          {chatOpen && (
+            <div className="chat-footer">
               <span className="status-dot" /> Tools run locally · AI via
               OpenRouter
-            </span>
-            <span>Enter to send · Shift + Enter for a new line</span>
-          </div>
+            </div>
+          )}
         </section>
       </main>
       {settingsOpen && <SettingsDialog close={() => setSettingsOpen(false)} />}

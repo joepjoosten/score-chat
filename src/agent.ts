@@ -11,7 +11,9 @@ import type { Message, Settings } from './state'
 const ScoreTools = Toolkit.make(
   Tool.make('read_score', {
     description: 'Read the current LilyPond source in the editor.',
-    parameters: Schema.Struct({}),
+    // An empty Struct compiles to an "object or array" JSON Schema that the
+    // OpenAI strict-schema path rejects; an empty Record compiles to a plain object.
+    parameters: Schema.Record(Schema.String, Schema.Never),
     success: Schema.String,
   }),
   Tool.make('validate_score', {

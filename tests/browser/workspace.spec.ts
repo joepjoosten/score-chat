@@ -4,14 +4,14 @@ import type { Page } from '@playwright/test'
 async function configure(page: Page) {
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.getByLabel('OpenRouter API key').fill('test-key-only')
-  await page.getByLabel('Model', { exact: true }).fill('test/model')
+  await page.getByLabel('Model', { exact: true }).fill('openai/test-model')
   await page.getByRole('button', { name: 'Save settings' }).click()
 }
 
 function response(message: object, finish = 'stop') {
   return {
     id: 'test-completion',
-    model: 'test/model',
+    model: 'openai/test-model',
     object: 'chat.completion',
     created: 1,
     system_fingerprint: null,
@@ -55,7 +55,7 @@ test('renders locally, switches views, persists edits and preferences, and downl
     'test-key-only',
   )
   await expect(page.getByLabel('Model', { exact: true })).toHaveValue(
-    'test/model',
+    'openai/test-model',
   )
   await page.getByRole('button', { name: 'Close settings' }).click()
   const downloadEvent = page.waitForEvent('download')
@@ -102,7 +102,7 @@ test('agent executes a validated score edit through Effect AI and preserves tool
       expect(route.request().headers().authorization).toBe(
         'Bearer test-key-only',
       )
-      expect(body.model).toBe('test/model')
+      expect(body.model).toBe('openai/test-model')
       expect(
         body.tools.map(
           (tool: { function: { name: string } }) => tool.function.name,

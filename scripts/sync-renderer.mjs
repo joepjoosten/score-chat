@@ -32,9 +32,9 @@ await build({
   stdin: {
     contents: `
       import font from './assets/fonts/emmentaler-20.svg';
-      import { parseSvgFontManifest } from './src/fonts/glyphs.ts';
+      import { parseSvgFontManifest, withPinnedEmmentalerMetrics } from './src/fonts/glyphs.ts';
       import { renderLySourceToSvg } from './src/render/ly-to-svg.ts';
-      const fontManifest = parseSvgFontManifest(font);
+      const fontManifest = withPinnedEmmentalerMetrics(parseSvgFontManifest(font));
       self.onmessage = ({ data: { id, source } }) => {
         try {
           const result = renderLySourceToSvg(source, { file: 'score.ly', fontManifest });

@@ -224,14 +224,19 @@ test('highlighted notes reach the model as source positions and get edited', asy
   await page.mouse.move(to.x, to.y, { steps: 6 })
   await page.mouse.up()
   const chip = page.locator('.selection-chip')
-  await expect(chip).toContainText('4 notes highlighted')
-  await expect(chip).toContainText('c4 e g e')
+  // The swipe also covers the time signature and the dynamic under the notes.
+  await expect(chip).toContainText(
+    '4 notes, 1 time signature, 1 dynamic highlighted',
+  )
+  await expect(chip).toContainText('\\time 4/4 c4 \\p e g e')
   await expect(page.locator('.page-overlay .marker')).toHaveCount(1)
   // Tapping a highlighted note lifts the marker from it again.
   const tap = at(23.5, 23.2)
   await page.mouse.click(tap.x, tap.y)
-  await expect(chip).toContainText('3 notes highlighted')
-  await expect(chip).toContainText('e g e')
+  await expect(chip).toContainText(
+    '3 notes, 1 time signature, 1 dynamic highlighted',
+  )
+  await expect(chip).toContainText('\\time 4/4 \\p e g e')
 
   let original = ''
   let calls = 0
@@ -246,10 +251,14 @@ test('highlighted notes reach the model as source positions and get edited', asy
         )
         const text = JSON.stringify(user.content)
         expect(text).toContain('Add staccato')
-        expect(text).toContain('highlighted 3 notes')
-        expect(text).toContain('line 14, columns 10-10: `e`')
-        expect(text).toContain('line 14, columns 12-12: `g`')
-        expect(text).toContain('line 14, columns 14-14: `e`')
+        expect(text).toContain(
+          'highlighted 3 notes, 1 time signature, 1 dynamic',
+        )
+        expect(text).toContain('Line 14: `    c4\\\\p e g e | f4 a g2 |`')
+        expect(text).toContain('line 14, columns 7-8 (dynamic): `\\\\p`')
+        expect(text).toContain('line 14, columns 10-10 (note): `e`')
+        expect(text).toContain('line 14, columns 12-12 (note): `g`')
+        expect(text).toContain('line 14, columns 14-14 (note): `e`')
         expect(text).not.toContain('`c4`')
         original =
           body.messages[0].content[0].text.split('Current score:\n\n')[1]
@@ -289,7 +298,7 @@ test('highlighted notes reach the model as source positions and get edited', asy
     'Added staccato to the three notes.',
   )
   await expect(page.locator('.message.user .message-selection')).toHaveText(
-    'e g e',
+    '\\time 4/4 \\p e g e',
   )
   expect(calls).toBe(2)
   // The edit invalidates the highlight; the chip is gone and the score changed.
@@ -335,7 +344,7 @@ test('pages can be shown as inline SVG for inspection, with active content strip
     { steps: 4 },
   )
   await page.mouse.up()
-  await expect(page.locator('.selection-chip')).toContainText('c4 e g e')
+  await expect(page.locator('.selection-chip')).toContainText('c4 \\p e g e')
   // Injected active content in a page never reaches the document.
   const hostile =
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" width="10mm" height="10mm" onload="window.pwned=1"><script>window.pwned=1</script><a href="javascript:window.pwned=1"><rect width="1" height="1"/></a><foreignObject><div>x</div></foreignObject></svg>'

@@ -70,7 +70,7 @@ export interface Message {
   id: string
   role: 'user' | 'assistant'
   text: string
-  /** Notes highlighted on the score when a user message was sent. */
+  /** Score elements highlighted when a user message was sent. */
   selection?: SelectedNote[]
 }
 

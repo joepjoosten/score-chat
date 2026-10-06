@@ -43,6 +43,7 @@ import {
   dragBox,
   markerStrokes,
   selectedNotes,
+  summarizeSelection,
 } from './selection'
 import type { Anchor, Box } from './selection'
 import { sanitizeSvg } from './svg'
@@ -793,10 +794,7 @@ export function App() {
             {highlightedNotes.length > 0 && (
               <div className="selection-chip" role="status">
                 <Highlighter size={12} />
-                <span>
-                  {highlightedNotes.length}{' '}
-                  {highlightedNotes.length === 1 ? 'note' : 'notes'} highlighted
-                </span>
+                <span>{summarizeSelection(highlightedNotes)} highlighted</span>
                 <span className="selection-preview">
                   {highlightedNotes.map((note) => note.text).join(' ')}
                 </span>

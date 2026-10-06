@@ -45,18 +45,21 @@ await build({
       import { parseSvgFontManifest, withPinnedEmmentalerMetrics } from './src/fonts/glyphs.ts';
       import { renderLySourceToSvg } from './src/render/ly-to-svg.ts';
       import { loadRendererData } from './src/data/renderer-data.ts';
+      import { pointAndClickLinker } from './src/render/point-and-click.ts';
       // Start fetching the data immediately; the font manifest needs it too.
       const ready = loadRendererData(new URL('./data/', import.meta.url))
         .then(() => withPinnedEmmentalerMetrics(parseSvgFontManifest(font)));
       const SYSTEM_GROUP = /data-system-id="(system-\\d+)" transform="translate\\(([-\\d.e]+) ([-\\d.e]+)\\)"/g;
-      // Page-space boxes of note heads and rests, keyed to their source spans, so the
-      // app can map a highlighted region of the page back to notes in the source.
-      // Layout placements are relative to their system; the system's page offset is
-      // the translate on its group in the page SVG.
-      const collectAnchors = (result, pages) => {
+      // Page-space boxes of every printed element that LilyPond's point-and-click
+      // links to a music event (notes, rests, articulations, dynamics, slurs, ...),
+      // keyed to that event's source span, so the app can map a highlighted region
+      // of the page back to the source. Layout placements are relative to their
+      // system; the system's page offset is the translate on its group in the page SVG.
+      const collectAnchors = (result, pages, source) => {
         const render = result.render;
         const graph = result.result?.graph;
         if (!render || !graph) return [];
+        const linked = pointAndClickLinker({ setting: true, source, file: 'score.ly' });
         const grobs = new Map(graph.grobs.map((grob) => [grob.id, grob]));
         const systems = new Map();
         pages.forEach((svg, page) => {
@@ -68,12 +71,16 @@ await build({
           const system = systems.get('system-' + (index + 1));
           if (!system) return;
           for (const placement of layout.placements) {
-            const grob = grobs.get(placement.grobId);
-            const origin = grob?.origin;
-            if (!origin || (grob.name !== 'NoteHead' && grob.name !== 'Rest')) continue;
+            // A spanner broken across systems keeps its original grob's cause.
+            const grob = grobs.get(placement.grobId)
+              ?? grobs.get(placement.grobId.replace(/:broken:[^:]*$/, ''));
+            if (!grob || !linked(grob)) continue;
+            const origin = grob.causeEvent.origin;
             const { x, y } = placement.stencil.extent;
+            // Empty stencils (e.g. a C major key signature) have nothing to swipe.
+            if (!(x.max > x.min && y.max > y.min)) continue;
             anchors.push({
-              kind: grob.name === 'Rest' ? 'rest' : 'note',
+              kind: grob.name,
               page: system.page,
               system: index,
               x: system.x + placement.x + x.min,
@@ -95,7 +102,7 @@ await build({
           const result = renderLySourceToSvg(source, { file: 'score.ly', fontManifest });
           const errors = result.diagnostics.filter(d => d.severity === 'error').map(d => d.message);
           const pages = result.render?.assembly.renderedPages.map(p => p.svg) ?? (result.svg ? [result.svg] : []);
-          self.postMessage({ id, pages, errors, anchors: collectAnchors(result, pages) });
+          self.postMessage({ id, pages, errors, anchors: collectAnchors(result, pages, source) });
         } catch (error) {
           self.postMessage({ id, pages: [], errors: [String(error)], anchors: [] });
         }

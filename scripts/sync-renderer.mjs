@@ -1,5 +1,5 @@
 import { build } from 'esbuild'
-import { copyFile, mkdir, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import { homedir } from 'node:os'
@@ -20,6 +20,16 @@ if (dirty)
     'Commit renderer changes before syncing a reproducible browser bundle.',
   )
 await mkdir('public/renderer', { recursive: true })
+// Font and engraving tables load separately from the worker code, so the
+// browser can cache them independently of renderer updates.
+await rm('public/renderer/data', { recursive: true, force: true })
+await mkdir('public/renderer/data')
+for (const file of await readdir(resolve(root, 'assets/data')))
+  if (file.endsWith('.json'))
+    await copyFile(
+      resolve(root, 'assets/data', file),
+      `public/renderer/data/${file}`,
+    )
 await copyFile(
   resolve(root, 'assets/fonts/LICENSE.OFL'),
   'public/renderer/LICENSE.OFL',
@@ -34,7 +44,10 @@ await build({
       import font from './assets/fonts/emmentaler-20.svg';
       import { parseSvgFontManifest, withPinnedEmmentalerMetrics } from './src/fonts/glyphs.ts';
       import { renderLySourceToSvg } from './src/render/ly-to-svg.ts';
-      const fontManifest = withPinnedEmmentalerMetrics(parseSvgFontManifest(font));
+      import { loadRendererData } from './src/data/renderer-data.ts';
+      // Start fetching the data immediately; the font manifest needs it too.
+      const ready = loadRendererData(new URL('./data/', import.meta.url))
+        .then(() => withPinnedEmmentalerMetrics(parseSvgFontManifest(font)));
       const SYSTEM_GROUP = /data-system-id="(system-\\d+)" transform="translate\\(([-\\d.e]+) ([-\\d.e]+)\\)"/g;
       // Page-space boxes of note heads and rests, keyed to their source spans, so the
       // app can map a highlighted region of the page back to notes in the source.
@@ -76,8 +89,9 @@ await build({
         });
         return anchors;
       };
-      self.onmessage = ({ data: { id, source } }) => {
+      self.onmessage = async ({ data: { id, source } }) => {
         try {
+          const fontManifest = await ready;
           const result = renderLySourceToSvg(source, { file: 'score.ly', fontManifest });
           const errors = result.diagnostics.filter(d => d.severity === 'error').map(d => d.message);
           const pages = result.render?.assembly.renderedPages.map(p => p.svg) ?? (result.svg ? [result.svg] : []);

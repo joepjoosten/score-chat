@@ -1,0 +1,604 @@
+# LilyPond Notation Reference and Music Glossary
+
+> LilyPond is a free text-based music engraving program. Its input language (`.ly` files) describes music in plain text — pitches, durations, articulations, lyrics, chords, layout — and compiles to engraved sheet music and MIDI. This file maps the LilyPond 2.26 Notation Reference (the complete description of the input syntax and every notation feature) and the Music Glossary (definitions and translations of musical terms used throughout the manuals).
+
+Notes for using these documents:
+
+- All links are to the stable v2.26 English documentation at lilypond.org. The Notation Reference lives under `/doc/v2.26/Documentation/notation/`, the Music Glossary under `/doc/v2.26/Documentation/music-glossary/`.
+- The Notation Reference assumes familiarity with the basics from the Learning Manual (https://lilypond.org/doc/v2.26/Documentation/learning/index.html). Chapters 1–8 cover notation used in almost every score; chapters 9–18 cover instrument- and style-specific notation; chapters 19–25 cover file structure, titling, output and MIDI; chapters 26–32 cover spacing and page layout; chapters 33–36 explain contexts and property tweaking (`\set`, `\override`, `\tweak`).
+- Each reference section typically contains syntax, examples, "Predefined commands", "Selected Snippets", "See also" cross-references (to the Music Glossary, Learning Manual, Internals Reference and Snippets), and "Known issues and warnings".
+- The Music Glossary terms are each on their own page; every entry gives translations (ES, I, F, D, NL, DK, S, FI, plus UK spelling where it differs) followed by a short definition and cross-references.
+- The full command/concept index is at https://lilypond.org/doc/v2.26/Documentation/notation/index-of-commands-and-concepts.html and the complete table of contents at https://lilypond.org/doc/v2.26/Documentation/notation/notation_toc.html
+
+## Musical notation
+
+- [Pitches](https://lilypond.org/doc/v2.26/Documentation/notation/pitches.html): Chapter 1 — entering, altering and displaying pitches, and note head styles.
+- [Writing pitches](https://lilypond.org/doc/v2.26/Documentation/notation/writing-pitches.html): Absolute octave entry (`c'`, `c,`), `\relative` octave entry, accidentals (`is`/`es`, `\cautionary`/`\forced`), approximate pitches, and note names in other languages (`\language "nederlands"` etc.).
+- [Changing multiple pitches](https://lilypond.org/doc/v2.26/Documentation/notation/changing-multiple-pitches.html): Octave checks (`=`), `\transpose`, `\inversion`, `\retrograde` and modal transformations (`\modalTranspose`, `\modalInversion`).
+- [Displaying pitches](https://lilypond.org/doc/v2.26/Documentation/notation/displaying-pitches.html): `\clef`, `\key` signatures, ottava brackets (`\ottava`), instrument transpositions (`\transposition`), automatic accidental styles (`\accidentalStyle`), alternate accidental glyphs and the ambitus.
+- [Note heads](https://lilypond.org/doc/v2.26/Documentation/notation/note-heads.html): Special note heads (cross, diamond, harmonic, slash…), easy-notation note heads with letters, shape-note heads (Sacred Harp, Aiken…), and improvisation notation.
+- [Rhythms](https://lilypond.org/doc/v2.26/Documentation/notation/rhythms.html): Chapter 2 — durations, rests, time signatures, beams, bar lines and special rhythmic notation.
+- [Writing rhythms](https://lilypond.org/doc/v2.26/Documentation/notation/writing-rhythms.html): Durations (`4`, `8.`, `\breve`, `\longa`), tuplets (`\tuplet 3/2`), scaling durations (`*2/3`), and ties (`~`, `\repeatTie`, `\laissezVibrer`).
+- [Writing rests](https://lilypond.org/doc/v2.26/Documentation/notation/writing-rests.html): Rests (`r`, pitched rests), invisible rests/skips (`s`, `\skip`), full-measure rests (`R1*4`, `\compressEmptyMeasures`) and caesuras.
+- [Displaying rhythms](https://lilypond.org/doc/v2.26/Documentation/notation/displaying-rhythms.html): `\time` signatures and their styles, metronome marks (`\tempo`), upbeats/anacrusis (`\partial`), unmetered music (`\cadenzaOn`), polymetric notation, automatic note splitting across bar lines, and rhythmic (melody rhythm) staves.
+- [Beams](https://lilypond.org/doc/v2.26/Documentation/notation/beams.html): Automatic beaming and its rules (`\autoBeamOff`, `beamExceptions`, `\set Timing.beatStructure`), manual beams (`[ ]`), feathered beams and slashed beams.
+- [Bars](https://lilypond.org/doc/v2.26/Documentation/notation/bars.html): Bar line types (`\bar "||"`, `\bar "|."`, `\bar ".|:"`), automatic bar lines, bar numbers, bar and bar-number checks (`|`, `\barNumberCheck`), rehearsal marks (`\mark`), measure counts and section divisions (`\section`, `\sectionLabel`).
+- [Special rhythmic concerns](https://lilypond.org/doc/v2.26/Documentation/notation/special-rhythmic-concerns.html): Grace notes (`\grace`, `\acciaccatura`, `\appoggiatura`, `\afterGrace`), aligning to cadenzas, and time administration (`currentBarNumber`, `measurePosition`, `\partial`).
+- [Expressive marks](https://lilypond.org/doc/v2.26/Documentation/notation/expressive-marks.html): Chapter 3 — articulations, dynamics, slurs, breath marks, glissandi, arpeggios and trills.
+- [Expressive marks attached to notes](https://lilypond.org/doc/v2.26/Documentation/notation/expressive-marks-attached-to-notes.html): Articulations and ornaments (`-.`, `->`, `\staccato`, `\fermata`, `\trill`, `\mordent`), dynamics (`\p`, `\ff`, `\<`, `\>`, `\!`, `\cresc`, `\dim`) and defining new dynamic marks (`make-dynamic-script`).
+- [Expressive marks as curves](https://lilypond.org/doc/v2.26/Documentation/notation/expressive-marks-as-curves.html): Slurs (`( )`, `\slurDashed`), phrasing slurs (`\( \)`), breath marks (`\breathe`) and falls and doits (`\bendAfter`).
+- [Expressive marks as lines](https://lilypond.org/doc/v2.26/Documentation/notation/expressive-marks-as-lines.html): Glissando (`\glissando`), arpeggio (`\arpeggio`, `\arpeggioBracket`) and trills with pitched trill notes (`\pitchedTrill`, `\startTrillSpan`).
+- [Repeats](https://lilypond.org/doc/v2.26/Documentation/notation/repeats.html): Chapter 4 — repeat structures with `\repeat`, alternative endings, segno/coda navigation, and percent/tremolo repeats.
+- [Long repeats](https://lilypond.org/doc/v2.26/Documentation/notation/long-repeats.html): Written-out repeats (`\repeat unfold`), simple repeats (`\repeat volta`), alternative endings (`\alternative`), other variation inside repeats (`\volta`, `\unfolded`), al-fine repeats, segno repeat structure (`\repeat segno`, `\section`, `\fine`, `\coda`), segno appearance and manual repeat marks.
+- [Short repeats](https://lilypond.org/doc/v2.26/Documentation/notation/short-repeats.html): Percent repeats (`\repeat percent`) and tremolo repeats (`\repeat tremolo`, `:16`).
+- [Simultaneous notes](https://lilypond.org/doc/v2.26/Documentation/notation/simultaneous-notes.html): Chapter 5 — chords, simultaneous expressions and polyphony on one staff.
+- [Single voice](https://lilypond.org/doc/v2.26/Documentation/notation/single-voice.html): Chorded notes (`<c e g>`), chord repetition (`q`), simultaneous expressions (`<< >>`) and clusters (`\makeClusters`).
+- [Multiple voices](https://lilypond.org/doc/v2.26/Documentation/notation/multiple-voices.html): Single-staff polyphony (`<< \\ >>`, `\voiceOne`…`\voiceFour`, `\oneVoice`), voice styles, collision resolution (`\shiftOn`, `\mergeDifferentlyDottedOn`), merging rests, automatic part combining (`\partCombine`) and writing music in parallel (`\parallelMusic`).
+- [Staff notation](https://lilypond.org/doc/v2.26/Documentation/notation/staff-notation.html): Chapter 6 — creating and grouping staves, modifying single staves, and writing parts.
+- [Displaying staves](https://lilypond.org/doc/v2.26/Documentation/notation/displaying-staves.html): Instantiating new staves (`\new Staff`, `TabStaff`, `DrumStaff`, `RhythmicStaff`…), grouping staves (`StaffGroup`, `ChoirStaff`, `GrandStaff`, `PianoStaff`), nested staff groups and separating systems.
+- [Modifying single staves](https://lilypond.org/doc/v2.26/Documentation/notation/modifying-single-staves.html): Staff symbol settings (`\stopStaff`, `\startStaff`, line count), ossia staves and hiding staves (`\RemoveEmptyStaves`).
+- [Writing parts](https://lilypond.org/doc/v2.26/Documentation/notation/writing-parts.html): Instrument names (`instrumentName`, `shortInstrumentName`), quoting other voices (`\addQuote`, `\quoteDuring`), formatting cue notes (`\cueDuring`) and compressing empty measures.
+- [Editorial annotations](https://lilypond.org/doc/v2.26/Documentation/notation/editorial-annotations.html): Chapter 7 — editorial and analytical marks inside and outside the staff.
+- [Inside the staff](https://lilypond.org/doc/v2.26/Documentation/notation/inside-the-staff.html): Notation font size (`\magnifyMusic`, `\teeny`, `\small`), fingering instructions (`-1`, `\finger`), gliding fingers, hidden notes (`\hideNotes`), coloring objects, staff highlights, brackets for optional material, parentheses (`\parenthesize`) and stems (`\stemUp`, `\stemDown`).
+- [Outside the staff](https://lilypond.org/doc/v2.26/Documentation/notation/outside-the-staff.html): Note names (`NoteNames` context), balloon help, grid lines and analysis brackets (`\startGroup`).
+- [Text](https://lilypond.org/doc/v2.26/Documentation/notation/text.html): Chapter 8 — attaching text to music, `\markup` formatting and fonts.
+- [Writing text](https://lilypond.org/doc/v2.26/Documentation/notation/writing-text.html): Text objects overview, text scripts (`^"text"`, `-\markup`), text spanners (`\startTextSpan`), section labels, text marks (`\textMark`, `\textEndMark`) and separate stand-alone text (`\markup` at top level).
+- [Formatting text](https://lilypond.org/doc/v2.26/Documentation/notation/formatting-text.html): `\markup` introduction, selecting font and size (`\bold`, `\italic`, `\fontsize`, `\abs-fontsize`), text alignment (`\left-align`, `\center-column`, `\column`, `\line`), graphic notation inside markup (`\box`, `\circle`, `\draw-line`) and music notation inside markup (`\note`, `\score`, `\musicglyph`).
+- [Fonts](https://lilypond.org/doc/v2.26/Documentation/notation/fonts.html): Unsupported font formats, finding fonts, font families (roman/sans/typewriter), font features and changing document fonts.
+
+## Specialist notation
+
+- [Vocal music](https://lilypond.org/doc/v2.26/Documentation/notation/vocal-music.html): Chapter 9 — lyrics, stanzas, songs, choral, opera and liturgical music.
+- [Common notation for vocal music](https://lilypond.org/doc/v2.26/Documentation/notation/common-notation-for-vocal-music.html): Entering lyrics (`\lyricmode`, `\addlyrics`, `\lyricsto`), aligning lyrics to a melody, automatic and manual syllable durations, multiple syllables to one note, multiple notes to one syllable (melismata), extenders and hyphens (`__`, `--`) and gradual vowel changes.
+- [Techniques specific to lyrics](https://lilypond.org/doc/v2.26/Documentation/notation/techniques-specific-to-lyrics.html): Lyrics and variables, placing lyrics vertically and syllables horizontally, lyrics and repeats, divisi lyrics and polyphony with shared lyrics.
+- [Stanzas](https://lilypond.org/doc/v2.26/Documentation/notation/stanzas.html): Stanza numbers (`stanza`), dynamics and singers' names in stanzas, stanzas with different rhythms, and printing stanzas at the end (optionally in columns).
+- [Songs](https://lilypond.org/doc/v2.26/Documentation/notation/songs.html): References for songs and lead sheets (melody, chords and lyrics).
+- [Choral](https://lilypond.org/doc/v2.26/Documentation/notation/choral.html): References for choral music and score layouts for SATB and other choral arrangements (`ChoirStaff`, built-in SATB template).
+- [Opera and stage musicals](https://lilypond.org/doc/v2.26/Documentation/notation/opera-and-stage-musicals.html): Character names, musical cues, spoken music (cross note heads, parlato) and dialogue over music.
+- [Chants psalms and hymns](https://lilypond.org/doc/v2.26/Documentation/notation/chants-psalms-and-hymns.html): Setting a chant, pointing a psalm, phrase bar lines and partial measures in hymn tunes.
+- [Ancient vocal music](https://lilypond.org/doc/v2.26/Documentation/notation/ancient-vocal-music.html): Pointer to the Ancient notation chapter for Gregorian and mensural vocal music.
+- [Keyboard and other multi-staff instruments](https://lilypond.org/doc/v2.26/Documentation/notation/keyboard-and-other-multi_002dstaff-instruments.html): Chapter 10 — piano, organ, accordion and harp.
+- [Common notation for keyboards](https://lilypond.org/doc/v2.26/Documentation/notation/common-notation-for-keyboards.html): `PianoStaff`, changing staff manually (`\change Staff`), automatically (`\autoChange`) and staff-change lines (`\showStaffSwitch`).
+- [Piano](https://lilypond.org/doc/v2.26/Documentation/notation/piano.html): Piano pedals (`\sustainOn`, `\sustainOff`, `\sostenutoOn`, `\unaCorda`) and pedal styles.
+- [Organ](https://lilypond.org/doc/v2.26/Documentation/notation/organ.html): Organ pedal marks (heel and toe).
+- [Accordion](https://lilypond.org/doc/v2.26/Documentation/notation/accordion.html): Discant register symbols (`\discant`, `\stdBass` markup).
+- [Harp](https://lilypond.org/doc/v2.26/Documentation/notation/harp.html): Harp pedal diagrams (`\harp-pedal` markup).
+- [Unfretted string instruments](https://lilypond.org/doc/v2.26/Documentation/notation/unfretted-string-instruments.html): Chapter 11 — orchestral strings.
+- [Common notation for unfretted strings](https://lilypond.org/doc/v2.26/Documentation/notation/common-notation-for-unfretted-strings.html): Bowing indications (`\upbow`, `\downbow`, `\open`), harmonics (`\harmonic`, `\harmonicByFret`, `\harmonicByRatio`) and snap (Bartók) pizzicato (`\snappizzicato`).
+- [Fretted string instruments](https://lilypond.org/doc/v2.26/Documentation/notation/fretted-string-instruments.html): Chapter 12 — tablature, fret diagrams, guitar, banjo and lute.
+- [Common notation for fretted strings](https://lilypond.org/doc/v2.26/Documentation/notation/common-notation-for-fretted-strings.html): String number indications (`\2`), default tablatures (`TabStaff`, `\tabFullNotation`), custom tablatures and tunings (`stringTunings`), fret diagram markups (`\fret-diagram`), predefined and automatic fret diagrams (`FretBoards`) and right-hand fingerings (`\rightHandFinger`).
+- [Guitar](https://lilypond.org/doc/v2.26/Documentation/notation/guitar.html): Indicating position and barring, harmonics and dampened notes, and power chords (`e:5`, `a:5.8` in chord mode).
+- [Banjo](https://lilypond.org/doc/v2.26/Documentation/notation/banjo.html): Five-string banjo tablatures (`banjo-tuning`, `banjo-open-d-tuning`…).
+- [Lute](https://lilypond.org/doc/v2.26/Documentation/notation/lute.html): Lute tablatures with additional bass strings.
+- [Percussion](https://lilypond.org/doc/v2.26/Documentation/notation/percussion.html): Chapter 13 — drum and percussion notation.
+- [Common notation for percussion](https://lilypond.org/doc/v2.26/Documentation/notation/common-notation-for-percussion.html): Basic percussion notation (`\drummode`, `DrumStaff`, drum names like `bd`, `sn`, `hh`), drum rolls, pitched percussion, percussion staves and styles (`drumStyleTable`), custom percussion staves and ghost notes.
+- [Wind instruments](https://lilypond.org/doc/v2.26/Documentation/notation/wind-instruments.html): Chapter 14 — breathing, tonguing, fingerings, bagpipes and woodwinds.
+- [Common notation for wind instruments](https://lilypond.org/doc/v2.26/Documentation/notation/common-notation-for-wind-instruments.html): Breath marks, articulations and fingerings for winds.
+- [Bagpipes](https://lilypond.org/doc/v2.26/Documentation/notation/bagpipes.html): Highland bagpipe definitions (`bagpipe.ly`: `\grip`, `\taor`, `\birl`…) and a full example.
+- [Woodwinds](https://lilypond.org/doc/v2.26/Documentation/notation/woodwinds.html): Woodwind fingering diagrams (`\woodwind-diagram` markup for flute, oboe, clarinet, saxophone, bassoon).
+- [Chord notation](https://lilypond.org/doc/v2.26/Documentation/notation/chord-notation.html): Chapter 15 — chord mode, chord names and figured bass.
+- [Chord mode](https://lilypond.org/doc/v2.26/Documentation/notation/chord-mode.html): `\chordmode` overview, common chords (`c:m`, `c:7`, `c:maj7`), extended and altered chords (`c:9`, `c:7.5-`, `c:sus4`), and inversions and specific voicings (`c/g`, `c/+e`).
+- [Displaying chords](https://lilypond.org/doc/v2.26/Documentation/notation/displaying-chords.html): Printing chord names (`ChordNames` context), customizing chord names (`chordNameLowercaseMinor`, `\germanChords`, exceptions) and chord grids (`ChordGrid`).
+- [Figured bass](https://lilypond.org/doc/v2.26/Documentation/notation/figured-bass.html): Introduction, entering figured bass (`\figuremode`, `<6 4>`, `\figures`) and displaying it (`FiguredBass` context).
+- [Contemporary music](https://lilypond.org/doc/v2.26/Documentation/notation/contemporary-music.html): Chapter 16 — microtones, contemporary rhythm, graphical notation and extended techniques.
+- [Pitch and harmony in contemporary music](https://lilypond.org/doc/v2.26/Documentation/notation/pitch-and-harmony-in-contemporary-music.html): Microtonal notation (quarter tones `cih`, `ceh`), contemporary key signatures and harmony.
+- [Contemporary approaches to rhythm](https://lilypond.org/doc/v2.26/Documentation/notation/contemporary-approaches-to-rhythm.html): Tuplets, time signatures, extended polymetric notation, beams and bar lines in contemporary music.
+- [Graphical notation](https://lilypond.org/doc/v2.26/Documentation/notation/graphical-notation.html): Duration lines (`\-`, `DurationLine` grob with beam, line, dashed, zigzag, trill styles).
+- [Contemporary scoring techniques](https://lilypond.org/doc/v2.26/Documentation/notation/contemporary-scoring-techniques.html): Placeholder section on contemporary scoring techniques.
+- [New instrumental techniques](https://lilypond.org/doc/v2.26/Documentation/notation/new-instrumental-techniques.html): Placeholder section on new instrumental techniques.
+- [Further reading and scores of interest](https://lilypond.org/doc/v2.26/Documentation/notation/further-reading-and-scores-of-interest.html): Books and articles on contemporary notation, and scores and musical examples.
+- [Ancient notation](https://lilypond.org/doc/v2.26/Documentation/notation/ancient-notation.html): Chapter 17 — mensural notation, Gregorian chant and Kievan square notation.
+- [Overview of the supported styles](https://lilypond.org/doc/v2.26/Documentation/notation/overview-of-the-supported-styles.html): Styles available for Gregorian chant (Vaticana, Medicaea, Hufnagel) and mensural notation.
+- [Ancient notation – common features](https://lilypond.org/doc/v2.26/Documentation/notation/ancient-notation-_002d-common-features.html): Predefined contexts (`MensuralStaff`, `VaticanaStaff`…), ligatures (`\[ \]`) and custodes.
+- [Typesetting mensural music](https://lilypond.org/doc/v2.26/Documentation/notation/typesetting-mensural-music.html): Mensural contexts, clefs, time signatures (mensuration signs), note heads, flags, rests, accidentals and key signatures, musica ficta and white mensural ligatures.
+- [Typesetting Gregorian chant](https://lilypond.org/doc/v2.26/Documentation/notation/typesetting-gregorian-chant.html): Gregorian contexts (`VaticanaStaff`, `GregorianTranscriptionStaff`), clefs, accidentals, divisiones, articulation signs, augmentum dots and square neume ligatures.
+- [Typesetting Kievan square notation](https://lilypond.org/doc/v2.26/Documentation/notation/typesetting-kievan-square-notation.html): Kievan contexts, clefs, notes, accidentals, bar lines and melismata.
+- [Working with ancient music – scenarios and solutions](https://lilypond.org/doc/v2.26/Documentation/notation/working-with-ancient-music-_002d-scenarios-and-solutions.html): Incipits, Mensurstriche layout, transcribing Gregorian chant, and producing ancient and modern editions from one source.
+- [World music](https://lilypond.org/doc/v2.26/Documentation/notation/world-music.html): Chapter 18 — non-Western notation, tunings and key signatures.
+- [Common notation for non-Western music](https://lilypond.org/doc/v2.26/Documentation/notation/common-notation-for-non_002dwestern-music.html): Extending notation and tuning systems (custom note names, alterations and key signatures).
+- [Arabic music](https://lilypond.org/doc/v2.26/Documentation/notation/arabic-music.html): Arabic note names (`arabic.ly`), key signatures for maqamat, time signatures, an example and further reading.
+- [Turkish classical music](https://lilypond.org/doc/v2.26/Documentation/notation/turkish-classical-music.html): Turkish note names (`turkish-makam.ly`), key signatures for makamlar and further reading.
+- [Persian classical music](https://lilypond.org/doc/v2.26/Documentation/notation/persian-classical-music.html): Persian notation (`persian.ly`, sori and koron), tunings, key signatures and further reading.
+
+## General input and output
+
+- [Input modes](https://lilypond.org/doc/v2.26/Documentation/notation/input-modes.html): Chapter 19 — the input modes that determine how notation is interpreted: `\chordmode`/`\chords`, `\drummode`/`\drums`, `\figuremode`/`\figures`, `\lyricmode`/`\lyrics`/`\addlyrics`, `\markup`/`\markuplist` and `\notemode`.
+- [Input structure](https://lilypond.org/doc/v2.26/Documentation/notation/input-structure.html): Chapter 20 — how `.ly` files, `\score`, `\book` and `\bookpart` blocks fit together.
+- [Structure of a score](https://lilypond.org/doc/v2.26/Documentation/notation/structure-of-a-score.html): A `\score` block holds exactly one music expression plus optional `\header`, `\layout` and `\midi` blocks.
+- [Multiple scores in a book](https://lilypond.org/doc/v2.26/Documentation/notation/multiple-scores-in-a-book.html): Combining several `\score` blocks, `\bookpart`s and top-level markup into one document.
+- [Multiple output files from one input file](https://lilypond.org/doc/v2.26/Documentation/notation/multiple-output-files-from-one-input-file.html): Each `\book` block produces its own output file; `\bookOutputName` and `\bookOutputSuffix`.
+- [Output file names](https://lilypond.org/doc/v2.26/Documentation/notation/output-file-names.html): Overriding output file names and suffixes from `\paper` blocks.
+- [File structure](https://lilypond.org/doc/v2.26/Documentation/notation/file-structure.html): The top-level expressions allowed in a `.ly` file: `\version`, variables, `\header`, `\paper`, `\layout`, `\midi`, `\score`, `\book`, `\markup`, Scheme, comments (`%`, `%{ %}`).
+- [Titles and headers](https://lilypond.org/doc/v2.26/Documentation/notation/titles-and-headers.html): Chapter 21 — titling, headers, footers, metadata, footnotes and tables of contents.
+- [Creating titles, headers, and footers](https://lilypond.org/doc/v2.26/Documentation/notation/creating-titles-headers-and-footers.html): `\header` fields (`title`, `subtitle`, `composer`, `poet`, `opus`, `tagline`…) and the default layout of book, bookpart and score titles, headers and footers.
+- [Custom titles, headers, and footers](https://lilypond.org/doc/v2.26/Documentation/notation/custom-titles-headers-and-footers.html): Custom text formatting and layout for titles (`bookTitleMarkup`, `scoreTitleMarkup`), headers and footers (`oddHeaderMarkup`, `evenFooterMarkup`).
+- [Creating output file metadata](https://lilypond.org/doc/v2.26/Documentation/notation/creating-output-file-metadata.html): `\header` variables that become PDF metadata (`pdftitle`, `pdfauthor`…).
+- [Creating footnotes](https://lilypond.org/doc/v2.26/Documentation/notation/creating-footnotes.html): `\footnote` in music expressions and in stand-alone text.
+- [Creating in-notes](https://lilypond.org/doc/v2.26/Documentation/notation/creating-in_002dnotes.html): Annotations typeset above or below a system rather than at the page bottom.
+- [Reference to page numbers](https://lilypond.org/doc/v2.26/Documentation/notation/reference-to-page-numbers.html): `\label` and the `\page-ref` markup command.
+- [Table of contents](https://lilypond.org/doc/v2.26/Documentation/notation/table-of-contents.html): `\markuplist \table-of-contents` and `\tocItem`.
+- [Working with input files](https://lilypond.org/doc/v2.26/Documentation/notation/working-with-input-files.html): Chapter 22 — includes, variables, tags, music functions and special characters.
+- [Including LilyPond files](https://lilypond.org/doc/v2.26/Documentation/notation/including-lilypond-files.html): `\include` and the include search path.
+- [Different editions from one source](https://lilypond.org/doc/v2.26/Documentation/notation/different-editions-from-one-source.html): Variables, tags (`\tag`, `\keepWithTag`, `\removeWithTag`, `\tagGroup`) and global settings.
+- [Using music functions](https://lilypond.org/doc/v2.26/Documentation/notation/using-music-functions.html): Substitution function syntax (`#(define-music-function ...)`), examples, preventing shared music expressions and interaction with `\relative`.
+- [Special characters](https://lilypond.org/doc/v2.26/Documentation/notation/special-characters.html): Text encoding (UTF-8), Unicode (`\char`) and ASCII aliases (`\flat`, `\sharp`, `--`, `\char ##x...`).
+- [Controlling output](https://lilypond.org/doc/v2.26/Documentation/notation/controlling-output.html): Chapter 23 — clipping fragments, skipping music, output formats, embedded files and alternative fonts.
+- [Extracting fragments of music](https://lilypond.org/doc/v2.26/Documentation/notation/extracting-fragments-of-music.html): `clip-regions` in `\layout`/`\paper` together with `-dclip-systems`.
+- [Skipping corrected music](https://lilypond.org/doc/v2.26/Documentation/notation/skipping-corrected-music.html): `showFirstLength`, `showLastLength` and `skipTypesetting` to speed up compilation.
+- [Alternative output formats](https://lilypond.org/doc/v2.26/Documentation/notation/alternative-output-formats.html): PDF, PS, PNG, EPS and SVG output (`-dbackend=svg`, `--svg`).
+- [Embedding files in PDF output](https://lilypond.org/doc/v2.26/Documentation/notation/embedding-files-in-pdf-output.html): `-dembed-source-code` to attach source files to the output PDF.
+- [Replacing the notation font](https://lilypond.org/doc/v2.26/Documentation/notation/replacing-the-notation-font.html): Using alternative music fonts such as Gonville in place of Emmentaler.
+- [Creating MIDI output](https://lilypond.org/doc/v2.26/Documentation/notation/creating-midi-output.html): Chapter 24 — generating and shaping MIDI files.
+- [Supported notation for MIDI](https://lilypond.org/doc/v2.26/Documentation/notation/supported-notation-for-midi.html): Notation that is rendered into MIDI (pitches, microtones, rhythms, tempo, dynamics, lyrics, transposition…).
+- [Unsupported notation for MIDI](https://lilypond.org/doc/v2.26/Documentation/notation/unsupported-notation-for-midi.html): Notation that has no MIDI effect (articulations, ornaments, glissandi, chord names…).
+- [The MIDI block](https://lilypond.org/doc/v2.26/Documentation/notation/the-midi-block.html): Adding a `\midi` block to `\score`, `\tempo` in MIDI, and context modifications inside it.
+- [Controlling MIDI dynamics](https://lilypond.org/doc/v2.26/Documentation/notation/controlling-midi-dynamics.html): Dynamic marks in MIDI, `midiMinimumVolume`/`midiMaximumVolume`, and `\midi` block properties.
+- [Using MIDI instruments](https://lilypond.org/doc/v2.26/Documentation/notation/using-midi-instruments.html): The `midiInstrument` property.
+- [Using repeats with MIDI](https://lilypond.org/doc/v2.26/Documentation/notation/using-repeats-with-midi.html): `\unfoldRepeats` so repeats sound in MIDI.
+- [MIDI channel mapping](https://lilypond.org/doc/v2.26/Documentation/notation/midi-channel-mapping.html): `midiChannelMapping` (instrument, staff or voice) and channel limits.
+- [Context properties for MIDI effects](https://lilypond.org/doc/v2.26/Documentation/notation/context-properties-for-midi-effects.html): `midiBalance`, `midiPanPosition`, `midiExpression`, `midiReverbLevel`, `midiChorusLevel`.
+- [Enhancing MIDI output](https://lilypond.org/doc/v2.26/Documentation/notation/enhancing-midi-output.html): The `articulate.ly` script (`\articulate`) and the swing script.
+- [Extracting musical information](https://lilypond.org/doc/v2.26/Documentation/notation/extracting-musical-information.html): Chapter 25 — displaying music as text.
+- [Displaying LilyPond notation](https://lilypond.org/doc/v2.26/Documentation/notation/displaying-lilypond-notation.html): `\displayLilyMusic` prints a music expression back as LilyPond input.
+- [Displaying Scheme music expressions](https://lilypond.org/doc/v2.26/Documentation/notation/displaying-scheme-music-expressions.html): `\displayMusic` (see Extending: Displaying music expressions).
+- [Saving music events to a file](https://lilypond.org/doc/v2.26/Documentation/notation/saving-music-events-to-a-file.html): `event-listener.ly` writes per-staff `.notes` files.
+
+## Spacing issues
+
+- [Page layout](https://lilypond.org/doc/v2.26/Documentation/notation/page-layout.html): Chapter 26 — the `\paper` block and its variables.
+- [The \paper block](https://lilypond.org/doc/v2.26/Documentation/notation/the-paper-block.html): Where `\paper` blocks may appear (top level, `\book`, `\bookpart`) and how they combine.
+- [Paper size and automatic scaling](https://lilypond.org/doc/v2.26/Documentation/notation/paper-size-and-automatic-scaling.html): `#(set-paper-size "a4")`, `'landscape`, and automatic scaling of dimensions to paper size.
+- [Fixed vertical spacing \paper variables](https://lilypond.org/doc/v2.26/Documentation/notation/fixed-vertical-spacing-paper-variables.html): `paper-height`, `top-margin`, `bottom-margin`, `ragged-bottom`, `ragged-last-bottom`.
+- [Flexible vertical spacing \paper variables](https://lilypond.org/doc/v2.26/Documentation/notation/flexible-vertical-spacing-paper-variables.html): Structure of spacing alists (`basic-distance`, `minimum-distance`, `padding`, `stretchability`) and the list of variables (`system-system-spacing`, `score-system-spacing`, `markup-system-spacing`, `top-system-spacing`…).
+- [Horizontal spacing \paper variables](https://lilypond.org/doc/v2.26/Documentation/notation/horizontal-spacing-paper-variables.html): Widths and margins (`paper-width`, `line-width`, `left-margin`, `right-margin`), two-sided mode (`inner-margin`, `outer-margin`, `binding-offset`), shifts and indents (`indent`, `short-indent`, `horizontal-shift`).
+- [Other \paper variables](https://lilypond.org/doc/v2.26/Documentation/notation/other-paper-variables.html): Variables for line breaking (`max-systems-per-page`, `system-count`), page breaking (`page-breaking`, `blank-page-penalty`), page numbering (`first-page-number`, `print-first-page-number`), headers and markups, and debugging (`annotate-spacing`).
+- [Score layout](https://lilypond.org/doc/v2.26/Documentation/notation/score-layout.html): Chapter 27 — the `\layout` block.
+- [The \layout block](https://lilypond.org/doc/v2.26/Documentation/notation/the-layout-block.html): Score-specific layout settings, `\context` blocks inside `\layout`, and combining/reusing layout definitions.
+- [Setting the staff size](https://lilypond.org/doc/v2.26/Documentation/notation/setting-the-staff-size.html): `#(set-global-staff-size 20)`, `\layout { #(layout-set-staff-size 18) }` and per-staff `\magnifyStaff`.
+- [Breaks](https://lilypond.org/doc/v2.26/Documentation/notation/breaks.html): Chapter 28 — line and page breaking.
+- [Line breaking](https://lilypond.org/doc/v2.26/Documentation/notation/line-breaking.html): Automatic line breaking, `\break`, `\noBreak`, `ragged-right`, `ragged-last`, and `\autoLineBreaksOff`.
+- [Page breaking](https://lilypond.org/doc/v2.26/Documentation/notation/page-breaking.html): Manual page breaks (`\pageBreak`, `\noPageBreak`, `\pageTurn`) and the algorithms `ly:optimal-breaking`, `ly:minimal-breaking`, `ly:one-page-breaking`, `ly:one-line-breaking`, `ly:one-line-auto-height-breaking`, `ly:page-turn-breaking`.
+- [Vertical spacing](https://lilypond.org/doc/v2.26/Documentation/notation/vertical-spacing.html): Chapter 29 — spacing between staves and systems, and collision avoidance.
+- [Flexible vertical spacing within systems](https://lilypond.org/doc/v2.26/Documentation/notation/flexible-vertical-spacing-within-systems.html): Within-system spacing properties (`staff-staff-spacing`, `staffgroup-staff-spacing`, `nonstaff-relatedstaff-spacing`…), spacing of ungrouped and grouped staves and of non-staff lines (lyrics, chord names).
+- [Explicit staff and system positioning](https://lilypond.org/doc/v2.26/Documentation/notation/explicit-staff-and-system-positioning.html): `line-break-system-details` on `NonMusicalPaperColumn` (`X-offset`, `Y-offset`, `alignment-distances`).
+- [Vertical collision avoidance](https://lilypond.org/doc/v2.26/Documentation/notation/vertical-collision-avoidance.html): Outside-staff objects, `outside-staff-priority`, `outside-staff-padding`, `outside-staff-horizontal-padding`.
+- [Horizontal spacing](https://lilypond.org/doc/v2.26/Documentation/notation/horizontal-spacing.html): Chapter 30 — the horizontal spacing engine and how to adjust it.
+- [Horizontal spacing overview](https://lilypond.org/doc/v2.26/Documentation/notation/horizontal-spacing-overview.html): Springs and rods, `SpacingSpanner`, `shortest-duration-space`, `spacing-increment`, `common-shortest-duration`.
+- [New spacing section](https://lilypond.org/doc/v2.26/Documentation/notation/new-spacing-section.html): `\newSpacingSection` to start a section with different spacing parameters.
+- [Changing horizontal spacing globally](https://lilypond.org/doc/v2.26/Documentation/notation/changing-horizontal-spacing-globally.html): `base-shortest-duration`, uniform stretching of tuplets and strict note spacing (`strict-note-spacing`).
+- [Adjusting horizontal spacing for specific layout objects](https://lilypond.org/doc/v2.26/Documentation/notation/adjusting-horizontal-spacing-for-specific-layout-objects.html): Overview of object-specific tweaks, spacing between adjacent non-musical items (`space-alist`) and between adjacent columns.
+- [Line width](https://lilypond.org/doc/v2.26/Documentation/notation/line-width.html): `indent` and `line-width` in the `\layout` block.
+- [Proportional notation](https://lilypond.org/doc/v2.26/Documentation/notation/proportional-notation.html): `proportionalNotationDuration`, `strict-note-spacing`, `uniform-stretching`, and separating proportional spacing across staves.
+- [Fitting music onto fewer pages](https://lilypond.org/doc/v2.26/Documentation/notation/fitting-music-onto-fewer-pages.html): Chapter 31 — techniques for compressing a score.
+- [Displaying spacing](https://lilypond.org/doc/v2.26/Documentation/notation/displaying-spacing.html): `annotate-spacing` to visualise vertical layout variables.
+- [Changing spacing](https://lilypond.org/doc/v2.26/Documentation/notation/changing-spacing.html): Reducing margins, staff size, `system-system-spacing`, and other knobs to fit music onto fewer pages.
+- [Tuning output](https://lilypond.org/doc/v2.26/Documentation/notation/tuning-output.html): Chapter 32 — introduction to changing LilyPond's default layout via properties (pointer to the Learning Manual's Tweaking output).
+
+## Changing defaults
+
+- [Interpretation contexts](https://lilypond.org/doc/v2.26/Documentation/notation/interpretation-contexts.html): Chapter 33 — the context hierarchy (`Score`, `StaffGroup`, `Staff`, `Voice`, `Lyrics`…) and how to create, modify and define contexts.
+- [Contexts explained](https://lilypond.org/doc/v2.26/Documentation/notation/contexts-explained.html): Output definitions as blueprints, `Score` as the master context, top-level staff containers, intermediate staff contexts and bottom-level voice contexts.
+- [Creating and referencing contexts](https://lilypond.org/doc/v2.26/Documentation/notation/creating-and-referencing-contexts.html): `\new`, `\context`, named contexts (`\new Staff = "upper"`) and implicit context creation.
+- [Keeping contexts alive](https://lilypond.org/doc/v2.26/Documentation/notation/keeping-contexts-alive.html): Why contexts die when empty and how to keep them alive with skips or `Keep_alive_together_engraver`.
+- [Modifying context plug-ins](https://lilypond.org/doc/v2.26/Documentation/notation/modifying-context-plug_002dins.html): Engravers and performers, `\with { \remove ... \consists ... }`.
+- [Changing context default settings](https://lilypond.org/doc/v2.26/Documentation/notation/changing-context-default-settings.html): Changing all contexts of a type (`\layout { \context { \Staff ... } }`), one specific context (`\with`), and the order of precedence.
+- [Defining new contexts](https://lilypond.org/doc/v2.26/Documentation/notation/defining-new-contexts.html): Building custom context types from engravers with `\context { \name ... \type ... \alias ... }`.
+- [Context layout order](https://lilypond.org/doc/v2.26/Documentation/notation/context-layout-order.html): `\accepts`, `\denies`, `\defaultchild` and `alignAboveContext`/`alignBelowContext`.
+- [Explaining the Internals Reference](https://lilypond.org/doc/v2.26/Documentation/notation/explaining-the-internals-reference.html): Chapter 34 — how to read the Internals Reference.
+- [Navigating the program reference](https://lilypond.org/doc/v2.26/Documentation/notation/navigating-the-program-reference.html): Worked example of finding the grob (`Fingering`) and engraver behind a notation element.
+- [Layout interfaces](https://lilypond.org/doc/v2.26/Documentation/notation/layout-interfaces.html): Grobs, their properties and the interfaces they support (`font-interface`, `side-position-interface`…).
+- [Determining the grob property](https://lilypond.org/doc/v2.26/Documentation/notation/determining-the-grob-property.html): Finding the property to override (e.g., `padding`) and applying `\override`.
+- [Modifying properties](https://lilypond.org/doc/v2.26/Documentation/notation/modifying-properties.html): Chapter 35 — the commands that change context and grob properties.
+- [Overview of modifying properties](https://lilypond.org/doc/v2.26/Documentation/notation/overview-of-modifying-properties.html): Context properties vs. grob properties and which commands apply to each.
+- [\set and \unset](https://lilypond.org/doc/v2.26/Documentation/notation/set-and-unset.html): `\set Context.property = value`, `\unset`, and property lookup through the context hierarchy.
+- [\override and \revert](https://lilypond.org/doc/v2.26/Documentation/notation/override-and-revert.html): `\override Context.Grob.property = value`, nested properties, `\revert`, `\overrideProperty`.
+- [The \once command](https://lilypond.org/doc/v2.26/Documentation/notation/the-once-command.html): `\once \set` / `\once \override` affecting only the current musical moment.
+- [\set versus \override](https://lilypond.org/doc/v2.26/Documentation/notation/set-versus-override.html): The difference in how context and grob properties are stored and propagated.
+- [\tweak and \single](https://lilypond.org/doc/v2.26/Documentation/notation/tweak-and-single.html): `\tweak property value` for one object among several at the same moment, `\tweak Grob.property`, and `\single \override`.
+- [The \offset command](https://lilypond.org/doc/v2.26/Documentation/notation/the-offset-command.html): Modifying a property relative to its default value.
+- [Modifying alists](https://lilypond.org/doc/v2.26/Documentation/notation/modifying-alists.html): Setting individual keys of alist properties (`\override ... .basic-distance = #8`).
+- [Useful concepts and properties](https://lilypond.org/doc/v2.26/Documentation/notation/useful-concepts-and-properties.html): Chapter 36 — the concepts behind common tweaks.
+- [Direction and placement](https://lilypond.org/doc/v2.26/Documentation/notation/direction-and-placement.html): Articulation direction indicators (`^`, `_`, `-`), the `direction` property, `UP`/`DOWN`/`CENTER` and predefined commands like `\stemUp`, `\slurDown`, `\dynamicUp`.
+- [Distances and measurements](https://lilypond.org/doc/v2.26/Documentation/notation/distances-and-measurements.html): Absolute units (`\mm`, `\cm`, `\in`, `\pt`) versus staff-space-scaled distances.
+- [Dimensions](https://lilypond.org/doc/v2.26/Documentation/notation/dimensions.html): Grob bounding boxes: `X-extent`, `Y-extent`, and `ly:make-stencil`.
+- [Spanners](https://lilypond.org/doc/v2.26/Documentation/notation/spanners.html): Objects spanning several notes or bars — modifying broken spanners, `minimum-length`, and controlling end points (`bound-details`).
+- [Line styles](https://lilypond.org/doc/v2.26/Documentation/notation/line-styles.html): `line-interface` styles: `line`, `dashed-line`, `dotted-line`, `zigzag`, `trill`, `none`.
+- [Line spanners](https://lilypond.org/doc/v2.26/Documentation/notation/line-spanners.html): `TextSpanner`, `Glissando`, `TrillSpanner` and `bound-details` for text and arrows at either end.
+- [Visibility of objects](https://lilypond.org/doc/v2.26/Documentation/notation/visibility-of-objects.html): Removing the stencil (`\omit`), transparency (`\hide`), painting objects white, `break-visibility`, and special considerations (clefs, key signatures at line breaks).
+- [Rotating objects](https://lilypond.org/doc/v2.26/Documentation/notation/rotating-objects.html): The `rotation` grob property and the `\rotate` markup command.
+- [Aligning objects](https://lilypond.org/doc/v2.26/Documentation/notation/aligning-objects.html): `X-offset`/`Y-offset`, `side-position-interface`, `self-alignment-interface` (`self-alignment-X`) and `break-alignable-interface`.
+- [Modifying stencils](https://lilypond.org/doc/v2.26/Documentation/notation/modifying-stencils.html): Replacing a grob's `stencil` with markup or Scheme-drawn stencils.
+- [Modifying shapes](https://lilypond.org/doc/v2.26/Documentation/notation/modifying-shapes.html): `\shape` for ties and slurs (Bézier control point offsets).
+
+## Appendices
+
+- [Markup commands](https://lilypond.org/doc/v2.26/Documentation/notation/markup-commands.html): Appendix A — the complete list of `\markup` and `\markuplist` commands.
+- [Text markup commands](https://lilypond.org/doc/v2.26/Documentation/notation/text-markup-commands.html): Font markup, alignment markup, graphical markup, music and musical-symbol markup, conditional markup, instrument-specific markup, accordion registers and other markup commands.
+- [Text markup list commands](https://lilypond.org/doc/v2.26/Documentation/notation/text-markup-list-commands.html): Commands usable with `\markuplist` (`\wordwrap-lines`, `\justified-lines`, `\table`, `\column-lines`…).
+- [Notation manual tables](https://lilypond.org/doc/v2.26/Documentation/notation/notation-manual-tables.html): Appendix B — reference tables.
+- [Chord name chart](https://lilypond.org/doc/v2.26/Documentation/notation/chord-name-chart.html): LilyPond's standard chord name output alongside the pitches each name represents.
+- [Common chord modifiers](https://lilypond.org/doc/v2.26/Documentation/notation/common-chord-modifiers.html): Chord-mode modifiers (`m`, `dim`, `aug`, `maj7`, `sus`, `7`, `9`, `11`, `13`…).
+- [Predefined string tunings](https://lilypond.org/doc/v2.26/Documentation/notation/predefined-string-tunings.html): Tunings for guitar, bass, mandolin, banjo, ukulele, violin, viola, cello, double bass and lute.
+- [Predefined fretboard diagrams](https://lilypond.org/doc/v2.26/Documentation/notation/predefined-fretboard-diagrams.html): Diagrams for guitar, ukulele and mandolin.
+- [Predefined paper sizes](https://lilypond.org/doc/v2.26/Documentation/notation/predefined-paper-sizes.html): ISO, ANSI and other sizes usable with `set-paper-size`.
+- [MIDI instruments](https://lilypond.org/doc/v2.26/Documentation/notation/midi-instruments.html): General MIDI names accepted by `midiInstrument`.
+- [List of colors](https://lilypond.org/doc/v2.26/Documentation/notation/list-of-colors.html): Normal and X11 color names for `\override ... color`.
+- [The Emmentaler font](https://lilypond.org/doc/v2.26/Documentation/notation/the-emmentaler-font.html): Modern (Feta) and ancient (Parmesan) glyph charts with glyph names for `\musicglyph`.
+- [Note head styles](https://lilypond.org/doc/v2.26/Documentation/notation/note-head-styles.html): All `NoteHead.style` values.
+- [Accidental glyph sets](https://lilypond.org/doc/v2.26/Documentation/notation/accidental-glyph-sets.html): Available alternate accidental glyph sets.
+- [Clef styles](https://lilypond.org/doc/v2.26/Documentation/notation/clef-styles.html): Standard, percussion, tab and ancient clefs with their middle-C positions.
+- [List of special characters](https://lilypond.org/doc/v2.26/Documentation/notation/list-of-special-characters.html): ASCII aliases for special characters in markup.
+- [List of articulations](https://lilypond.org/doc/v2.26/Documentation/notation/list-of-articulations.html): Articulation, ornament, fermata, instrument-specific, repeat-sign and ancient scripts.
+- [List of breath marks](https://lilypond.org/doc/v2.26/Documentation/notation/list-of-breath-marks.html): Breath mark glyphs for `\breathe`.
+- [Percussion notes](https://lilypond.org/doc/v2.26/Documentation/notation/percussion-notes.html): All drum names usable in `\drummode` (`bd`, `sn`, `hh`, `cymc`, `tomh`…).
+- [List of bar lines](https://lilypond.org/doc/v2.26/Documentation/notation/list-of-bar-lines.html): All bar line strings accepted by `\bar`.
+- [Default values for outside-staff-priority](https://lilypond.org/doc/v2.26/Documentation/notation/default-values-for-outside_002dstaff_002dpriority.html): Priorities of outside-staff grobs.
+- [Default values for script-priority](https://lilypond.org/doc/v2.26/Documentation/notation/default-values-for-script_002dpriority.html): Priorities of scripts and script-related grobs.
+- [Grobs and their break-align symbols](https://lilypond.org/doc/v2.26/Documentation/notation/grobs-and-their-break_002dalign-symbols.html): Mapping from break-aligned grobs to their `break-align-symbols`.
+- [Technical glossary](https://lilypond.org/doc/v2.26/Documentation/notation/technical-glossary.html): Internal terms: grob, spanner, item, engraver, context, callback, closure, glyph, lexer, parser, output-def, stencil, etc.
+- [Available music functions](https://lilypond.org/doc/v2.26/Documentation/notation/available-music-functions.html): Every built-in music function with its argument types.
+- [Context modification identifiers](https://lilypond.org/doc/v2.26/Documentation/notation/context-modification-identifiers.html): Predefined `\with`/`\layout` modifications such as `\RemoveEmptyStaves`, `\RemoveAllEmptyStaves`, `\EnableGregorianDivisiones`.
+- [Paper variables](https://lilypond.org/doc/v2.26/Documentation/notation/paper-variables.html): All predefined `\paper` variables with their A4 default values.
+- [Naming conventions](https://lilypond.org/doc/v2.26/Documentation/notation/naming-conventions.html): Case conventions for contexts, grobs, properties, engravers and functions.
+- [Predefined type predicates](https://lilypond.org/doc/v2.26/Documentation/notation/predefined-type-predicates.html): R5RS, Guile and LilyPond Scheme predicates (`ly:music?`, `markup?`, `number-pair?`…) used in function definitions.
+- [Cheat sheet](https://lilypond.org/doc/v2.26/Documentation/notation/cheat-sheet.html): Appendix C — one-page summary of the most common syntax.
+- [Index of commands and concepts](https://lilypond.org/doc/v2.26/Documentation/notation/index-of-commands-and-concepts.html): Appendix E — alphabetical index of every command and concept in the Notation Reference.
+
+## Music Glossary
+
+- [Music Glossary](https://lilypond.org/doc/v2.26/Documentation/music-glossary/index.html): Definitions and translations of the musical terms used in the LilyPond manuals, for version 2.26.
+- [Musical terms A-Z](https://lilypond.org/doc/v2.26/Documentation/music-glossary/musical-terms-a_002dz.html): About 340 terms from "a due" to "woodwind" — each with translations (UK, ES, I, F, D, NL, DK, S, FI), a definition and cross-references. Individual term pages are listed under Optional below.
+- [Duration names notes and rests](https://lilypond.org/doc/v2.26/Documentation/music-glossary/duration-names-notes-and-rests.html): Table of note and rest names (maxima, longa, breve, whole/semibreve, half/minim, quarter/crotchet, eighth/quaver … 128th) in US, UK and other languages.
+- [Pitch names](https://lilypond.org/doc/v2.26/Documentation/music-glossary/pitch-names.html): Table of pitch and accidental names (C, D, E … sharp, flat, double sharp) across languages, matching the `\language` note-name sets.
+- [Non-Western terms A-Z](https://lilypond.org/doc/v2.26/Documentation/music-glossary/non_002dwestern-terms-a_002dz.html): Terms from Arabic and Turkish music: bayati, iraq, kurd, makam, makamlar, maqam, rast, semai, sikah, taqasim.
+
+## Optional
+
+Individual Music Glossary term pages:
+
+- [a due](https://lilypond.org/doc/v2.26/Documentation/music-glossary/a-due.html)
+- [accelerando](https://lilypond.org/doc/v2.26/Documentation/music-glossary/accelerando.html)
+- [accent](https://lilypond.org/doc/v2.26/Documentation/music-glossary/accent.html)
+- [accessory](https://lilypond.org/doc/v2.26/Documentation/music-glossary/accessory.html)
+- [acciaccatura](https://lilypond.org/doc/v2.26/Documentation/music-glossary/acciaccatura.html)
+- [accidental](https://lilypond.org/doc/v2.26/Documentation/music-glossary/accidental.html)
+- [adagio](https://lilypond.org/doc/v2.26/Documentation/music-glossary/adagio.html)
+- [al fine](https://lilypond.org/doc/v2.26/Documentation/music-glossary/al-fine.html)
+- [al niente](https://lilypond.org/doc/v2.26/Documentation/music-glossary/al-niente.html)
+- [alla breve](https://lilypond.org/doc/v2.26/Documentation/music-glossary/alla-breve.html)
+- [allegro](https://lilypond.org/doc/v2.26/Documentation/music-glossary/allegro.html)
+- [alteration](https://lilypond.org/doc/v2.26/Documentation/music-glossary/alteration.html)
+- [alto](https://lilypond.org/doc/v2.26/Documentation/music-glossary/alto.html)
+- [alto clef](https://lilypond.org/doc/v2.26/Documentation/music-glossary/alto-clef.html)
+- [ambitus](https://lilypond.org/doc/v2.26/Documentation/music-glossary/ambitus.html)
+- [anacrusis](https://lilypond.org/doc/v2.26/Documentation/music-glossary/anacrusis.html)
+- [ancient minor scale](https://lilypond.org/doc/v2.26/Documentation/music-glossary/ancient-minor-scale.html)
+- [andante](https://lilypond.org/doc/v2.26/Documentation/music-glossary/andante.html)
+- [appoggiatura](https://lilypond.org/doc/v2.26/Documentation/music-glossary/appoggiatura.html)
+- [arpeggio](https://lilypond.org/doc/v2.26/Documentation/music-glossary/arpeggio.html)
+- [arrastre](https://lilypond.org/doc/v2.26/Documentation/music-glossary/arrastre.html)
+- [articulation](https://lilypond.org/doc/v2.26/Documentation/music-glossary/articulation.html)
+- [ascending interval](https://lilypond.org/doc/v2.26/Documentation/music-glossary/ascending-interval.html)
+- [augmentation](https://lilypond.org/doc/v2.26/Documentation/music-glossary/augmentation.html)
+- [augmented interval](https://lilypond.org/doc/v2.26/Documentation/music-glossary/augmented-interval.html)
+- [autograph](https://lilypond.org/doc/v2.26/Documentation/music-glossary/autograph.html)
+- [backfall](https://lilypond.org/doc/v2.26/Documentation/music-glossary/backfall.html)
+- [bar](https://lilypond.org/doc/v2.26/Documentation/music-glossary/bar.html)
+- [bar line](https://lilypond.org/doc/v2.26/Documentation/music-glossary/bar-line.html)
+- [baritone](https://lilypond.org/doc/v2.26/Documentation/music-glossary/baritone.html)
+- [baritone clef](https://lilypond.org/doc/v2.26/Documentation/music-glossary/baritone-clef.html)
+- [bass](https://lilypond.org/doc/v2.26/Documentation/music-glossary/bass.html)
+- [bass clef](https://lilypond.org/doc/v2.26/Documentation/music-glossary/bass-clef.html)
+- [beam](https://lilypond.org/doc/v2.26/Documentation/music-glossary/beam.html)
+- [beat](https://lilypond.org/doc/v2.26/Documentation/music-glossary/beat.html)
+- [beat repeat](https://lilypond.org/doc/v2.26/Documentation/music-glossary/beat-repeat.html)
+- [bind](https://lilypond.org/doc/v2.26/Documentation/music-glossary/bind.html)
+- [brace](https://lilypond.org/doc/v2.26/Documentation/music-glossary/brace.html)
+- [bracket](https://lilypond.org/doc/v2.26/Documentation/music-glossary/bracket.html)
+- [brass](https://lilypond.org/doc/v2.26/Documentation/music-glossary/brass.html)
+- [breath mark](https://lilypond.org/doc/v2.26/Documentation/music-glossary/breath-mark.html)
+- [breve](https://lilypond.org/doc/v2.26/Documentation/music-glossary/breve.html)
+- [C clef](https://lilypond.org/doc/v2.26/Documentation/music-glossary/c-clef.html)
+- [cadence](https://lilypond.org/doc/v2.26/Documentation/music-glossary/cadence.html)
+- [cadenza](https://lilypond.org/doc/v2.26/Documentation/music-glossary/cadenza.html)
+- [caesura](https://lilypond.org/doc/v2.26/Documentation/music-glossary/caesura.html)
+- [canon](https://lilypond.org/doc/v2.26/Documentation/music-glossary/canon.html)
+- [cent](https://lilypond.org/doc/v2.26/Documentation/music-glossary/cent.html)
+- [central C](https://lilypond.org/doc/v2.26/Documentation/music-glossary/central-c.html)
+- [chord](https://lilypond.org/doc/v2.26/Documentation/music-glossary/chord.html)
+- [chord grid](https://lilypond.org/doc/v2.26/Documentation/music-glossary/chord-grid.html)
+- [chromatic scale](https://lilypond.org/doc/v2.26/Documentation/music-glossary/chromatic-scale.html)
+- [chromaticism](https://lilypond.org/doc/v2.26/Documentation/music-glossary/chromaticism.html)
+- [church mode](https://lilypond.org/doc/v2.26/Documentation/music-glossary/church-mode.html)
+- [clef](https://lilypond.org/doc/v2.26/Documentation/music-glossary/clef.html)
+- [cluster](https://lilypond.org/doc/v2.26/Documentation/music-glossary/cluster.html)
+- [comma](https://lilypond.org/doc/v2.26/Documentation/music-glossary/comma.html)
+- [common meter](https://lilypond.org/doc/v2.26/Documentation/music-glossary/common-meter.html)
+- [Common Practice Period](https://lilypond.org/doc/v2.26/Documentation/music-glossary/common-practice-period.html)
+- [common time](https://lilypond.org/doc/v2.26/Documentation/music-glossary/common-time.html)
+- [complement](https://lilypond.org/doc/v2.26/Documentation/music-glossary/complement.html)
+- [compound interval](https://lilypond.org/doc/v2.26/Documentation/music-glossary/compound-interval.html)
+- [compound meter](https://lilypond.org/doc/v2.26/Documentation/music-glossary/compound-meter.html)
+- [compound time](https://lilypond.org/doc/v2.26/Documentation/music-glossary/compound-time.html)
+- [concert pitch](https://lilypond.org/doc/v2.26/Documentation/music-glossary/concert-pitch.html)
+- [conjunct movement](https://lilypond.org/doc/v2.26/Documentation/music-glossary/conjunct-movement.html)
+- [consonance](https://lilypond.org/doc/v2.26/Documentation/music-glossary/consonance.html)
+- [contralto](https://lilypond.org/doc/v2.26/Documentation/music-glossary/contralto.html)
+- [copying music](https://lilypond.org/doc/v2.26/Documentation/music-glossary/copying-music.html)
+- [counterpoint](https://lilypond.org/doc/v2.26/Documentation/music-glossary/counterpoint.html)
+- [countertenor](https://lilypond.org/doc/v2.26/Documentation/music-glossary/countertenor.html)
+- [crescendo](https://lilypond.org/doc/v2.26/Documentation/music-glossary/crescendo.html)
+- [cue-notes](https://lilypond.org/doc/v2.26/Documentation/music-glossary/cue_002dnotes.html)
+- [custos](https://lilypond.org/doc/v2.26/Documentation/music-glossary/custos.html)
+- [cut time](https://lilypond.org/doc/v2.26/Documentation/music-glossary/cut-time.html)
+- [da capo](https://lilypond.org/doc/v2.26/Documentation/music-glossary/da-capo.html)
+- [dal niente](https://lilypond.org/doc/v2.26/Documentation/music-glossary/dal-niente.html)
+- [dal segno](https://lilypond.org/doc/v2.26/Documentation/music-glossary/dal-segno.html)
+- [decrescendo](https://lilypond.org/doc/v2.26/Documentation/music-glossary/decrescendo.html)
+- [descending interval](https://lilypond.org/doc/v2.26/Documentation/music-glossary/descending-interval.html)
+- [diatonic scale](https://lilypond.org/doc/v2.26/Documentation/music-glossary/diatonic-scale.html)
+- [didymic comma](https://lilypond.org/doc/v2.26/Documentation/music-glossary/didymic-comma.html)
+- [diminished interval](https://lilypond.org/doc/v2.26/Documentation/music-glossary/diminished-interval.html)
+- [diminuendo](https://lilypond.org/doc/v2.26/Documentation/music-glossary/diminuendo.html)
+- [diminution](https://lilypond.org/doc/v2.26/Documentation/music-glossary/diminution.html)
+- [direct](https://lilypond.org/doc/v2.26/Documentation/music-glossary/direct.html)
+- [disjunct movement](https://lilypond.org/doc/v2.26/Documentation/music-glossary/disjunct-movement.html)
+- [dissonance](https://lilypond.org/doc/v2.26/Documentation/music-glossary/dissonance.html)
+- [dissonant interval](https://lilypond.org/doc/v2.26/Documentation/music-glossary/dissonant-interval.html)
+- [divisio](https://lilypond.org/doc/v2.26/Documentation/music-glossary/divisio.html)
+- [doit](https://lilypond.org/doc/v2.26/Documentation/music-glossary/doit.html)
+- [dominant](https://lilypond.org/doc/v2.26/Documentation/music-glossary/dominant.html)
+- [dominant ninth chord](https://lilypond.org/doc/v2.26/Documentation/music-glossary/dominant-ninth-chord.html)
+- [dominant seventh chord](https://lilypond.org/doc/v2.26/Documentation/music-glossary/dominant-seventh-chord.html)
+- [dorian mode](https://lilypond.org/doc/v2.26/Documentation/music-glossary/dorian-mode.html)
+- [dot (augmentation dot)](https://lilypond.org/doc/v2.26/Documentation/music-glossary/dot-_0028augmentation-dot_0029.html)
+- [dotted note](https://lilypond.org/doc/v2.26/Documentation/music-glossary/dotted-note.html)
+- [double appoggiatura](https://lilypond.org/doc/v2.26/Documentation/music-glossary/double-appoggiatura.html)
+- [double bar line](https://lilypond.org/doc/v2.26/Documentation/music-glossary/double-bar-line.html)
+- [double dotted note](https://lilypond.org/doc/v2.26/Documentation/music-glossary/double-dotted-note.html)
+- [double flat](https://lilypond.org/doc/v2.26/Documentation/music-glossary/double-flat.html)
+- [double sharp](https://lilypond.org/doc/v2.26/Documentation/music-glossary/double-sharp.html)
+- [double time signature](https://lilypond.org/doc/v2.26/Documentation/music-glossary/double-time-signature.html)
+- [double trill](https://lilypond.org/doc/v2.26/Documentation/music-glossary/double-trill.html)
+- [duple meter](https://lilypond.org/doc/v2.26/Documentation/music-glossary/duple-meter.html)
+- [duplet](https://lilypond.org/doc/v2.26/Documentation/music-glossary/duplet.html)
+- [duration](https://lilypond.org/doc/v2.26/Documentation/music-glossary/duration.html)
+- [dynamics](https://lilypond.org/doc/v2.26/Documentation/music-glossary/dynamics.html)
+- [ecclesiastical mode](https://lilypond.org/doc/v2.26/Documentation/music-glossary/ecclesiastical-mode.html)
+- [eighth note](https://lilypond.org/doc/v2.26/Documentation/music-glossary/eighth-note.html)
+- [eighth rest](https://lilypond.org/doc/v2.26/Documentation/music-glossary/eighth-rest.html)
+- [elision](https://lilypond.org/doc/v2.26/Documentation/music-glossary/elision.html)
+- [embellishment](https://lilypond.org/doc/v2.26/Documentation/music-glossary/embellishment.html)
+- [engraving](https://lilypond.org/doc/v2.26/Documentation/music-glossary/engraving.html)
+- [enharmonic](https://lilypond.org/doc/v2.26/Documentation/music-glossary/enharmonic.html)
+- [equal temperament](https://lilypond.org/doc/v2.26/Documentation/music-glossary/equal-temperament.html)
+- [expression mark](https://lilypond.org/doc/v2.26/Documentation/music-glossary/expression-mark.html)
+- [extender line](https://lilypond.org/doc/v2.26/Documentation/music-glossary/extender-line.html)
+- [F clef](https://lilypond.org/doc/v2.26/Documentation/music-glossary/f-clef.html)
+- [fall](https://lilypond.org/doc/v2.26/Documentation/music-glossary/fall.html)
+- [feathered beam](https://lilypond.org/doc/v2.26/Documentation/music-glossary/feathered-beam.html)
+- [fermata](https://lilypond.org/doc/v2.26/Documentation/music-glossary/fermata.html)
+- [fifth](https://lilypond.org/doc/v2.26/Documentation/music-glossary/fifth.html)
+- [figured bass](https://lilypond.org/doc/v2.26/Documentation/music-glossary/figured-bass.html)
+- [fine](https://lilypond.org/doc/v2.26/Documentation/music-glossary/fine.html)
+- [fingering](https://lilypond.org/doc/v2.26/Documentation/music-glossary/fingering.html)
+- [flag](https://lilypond.org/doc/v2.26/Documentation/music-glossary/flag.html)
+- [flageolet](https://lilypond.org/doc/v2.26/Documentation/music-glossary/flageolet.html)
+- [flat](https://lilypond.org/doc/v2.26/Documentation/music-glossary/flat.html)
+- [forefall](https://lilypond.org/doc/v2.26/Documentation/music-glossary/forefall.html)
+- [forte](https://lilypond.org/doc/v2.26/Documentation/music-glossary/forte.html)
+- [fourth](https://lilypond.org/doc/v2.26/Documentation/music-glossary/fourth.html)
+- [Frenched score](https://lilypond.org/doc/v2.26/Documentation/music-glossary/frenched-score.html)
+- [Frenched staff](https://lilypond.org/doc/v2.26/Documentation/music-glossary/frenched-staff.html)
+- [Frenched staves](https://lilypond.org/doc/v2.26/Documentation/music-glossary/frenched-staves.html)
+- [fugue](https://lilypond.org/doc/v2.26/Documentation/music-glossary/fugue.html)
+- [functional harmony](https://lilypond.org/doc/v2.26/Documentation/music-glossary/functional-harmony.html)
+- [G clef](https://lilypond.org/doc/v2.26/Documentation/music-glossary/g-clef.html)
+- [glissando](https://lilypond.org/doc/v2.26/Documentation/music-glossary/glissando.html)
+- [grace notes](https://lilypond.org/doc/v2.26/Documentation/music-glossary/grace-notes.html)
+- [grand staff](https://lilypond.org/doc/v2.26/Documentation/music-glossary/grand-staff.html)
+- [grave](https://lilypond.org/doc/v2.26/Documentation/music-glossary/grave.html)
+- [gruppetto](https://lilypond.org/doc/v2.26/Documentation/music-glossary/gruppetto.html)
+- [hairpin](https://lilypond.org/doc/v2.26/Documentation/music-glossary/hairpin.html)
+- [half note](https://lilypond.org/doc/v2.26/Documentation/music-glossary/half-note.html)
+- [half rest](https://lilypond.org/doc/v2.26/Documentation/music-glossary/half-rest.html)
+- [harmonic cadence](https://lilypond.org/doc/v2.26/Documentation/music-glossary/harmonic-cadence.html)
+- [harmonics](https://lilypond.org/doc/v2.26/Documentation/music-glossary/harmonics.html)
+- [harmony](https://lilypond.org/doc/v2.26/Documentation/music-glossary/harmony.html)
+- [hemiola](https://lilypond.org/doc/v2.26/Documentation/music-glossary/hemiola.html)
+- [high bass clef](https://lilypond.org/doc/v2.26/Documentation/music-glossary/high-bass-clef.html)
+- [homophony](https://lilypond.org/doc/v2.26/Documentation/music-glossary/homophony.html)
+- [hook](https://lilypond.org/doc/v2.26/Documentation/music-glossary/hook.html)
+- [hymn meter](https://lilypond.org/doc/v2.26/Documentation/music-glossary/hymn-meter.html)
+- [incomplete dominant seventh chord](https://lilypond.org/doc/v2.26/Documentation/music-glossary/incomplete-dominant-seventh-chord.html)
+- [interval](https://lilypond.org/doc/v2.26/Documentation/music-glossary/interval.html)
+- [inversion](https://lilypond.org/doc/v2.26/Documentation/music-glossary/inversion.html)
+- [inverted interval](https://lilypond.org/doc/v2.26/Documentation/music-glossary/inverted-interval.html)
+- [just intonation](https://lilypond.org/doc/v2.26/Documentation/music-glossary/just-intonation.html)
+- [key](https://lilypond.org/doc/v2.26/Documentation/music-glossary/key.html)
+- [key signature](https://lilypond.org/doc/v2.26/Documentation/music-glossary/key-signature.html)
+- [Kievan notation](https://lilypond.org/doc/v2.26/Documentation/music-glossary/kievan-notation.html)
+- [laissez vibrer](https://lilypond.org/doc/v2.26/Documentation/music-glossary/laissez-vibrer.html)
+- [largo](https://lilypond.org/doc/v2.26/Documentation/music-glossary/largo.html)
+- [leading note](https://lilypond.org/doc/v2.26/Documentation/music-glossary/leading-note.html)
+- [ledger line](https://lilypond.org/doc/v2.26/Documentation/music-glossary/ledger-line.html)
+- [legato](https://lilypond.org/doc/v2.26/Documentation/music-glossary/legato.html)
+- [legato curve](https://lilypond.org/doc/v2.26/Documentation/music-glossary/legato-curve.html)
+- [leger line](https://lilypond.org/doc/v2.26/Documentation/music-glossary/leger-line.html)
+- [ligature](https://lilypond.org/doc/v2.26/Documentation/music-glossary/ligature.html)
+- [lilypond](https://lilypond.org/doc/v2.26/Documentation/music-glossary/lilypond.html)
+- [line](https://lilypond.org/doc/v2.26/Documentation/music-glossary/line.html)
+- [loco](https://lilypond.org/doc/v2.26/Documentation/music-glossary/loco.html)
+- [long appoggiatura](https://lilypond.org/doc/v2.26/Documentation/music-glossary/long-appoggiatura.html)
+- [longa](https://lilypond.org/doc/v2.26/Documentation/music-glossary/longa.html)
+- [lyric tie](https://lilypond.org/doc/v2.26/Documentation/music-glossary/lyric-tie.html)
+- [lyrics](https://lilypond.org/doc/v2.26/Documentation/music-glossary/lyrics.html)
+- [major](https://lilypond.org/doc/v2.26/Documentation/music-glossary/major.html)
+- [major interval](https://lilypond.org/doc/v2.26/Documentation/music-glossary/major-interval.html)
+- [maxima](https://lilypond.org/doc/v2.26/Documentation/music-glossary/maxima.html)
+- [meantone temperament](https://lilypond.org/doc/v2.26/Documentation/music-glossary/meantone-temperament.html)
+- [measure](https://lilypond.org/doc/v2.26/Documentation/music-glossary/measure.html)
+- [measure repeat](https://lilypond.org/doc/v2.26/Documentation/music-glossary/measure-repeat.html)
+- [mediant](https://lilypond.org/doc/v2.26/Documentation/music-glossary/mediant.html)
+- [melisma](https://lilypond.org/doc/v2.26/Documentation/music-glossary/melisma.html)
+- [melisma line](https://lilypond.org/doc/v2.26/Documentation/music-glossary/melisma-line.html)
+- [melodic cadence](https://lilypond.org/doc/v2.26/Documentation/music-glossary/melodic-cadence.html)
+- [mensural notation](https://lilypond.org/doc/v2.26/Documentation/music-glossary/mensural-notation.html)
+- [mensuration sign](https://lilypond.org/doc/v2.26/Documentation/music-glossary/mensuration-sign.html)
+- [mensurstrich](https://lilypond.org/doc/v2.26/Documentation/music-glossary/mensurstrich.html)
+- [meter](https://lilypond.org/doc/v2.26/Documentation/music-glossary/meter.html)
+- [metronome](https://lilypond.org/doc/v2.26/Documentation/music-glossary/metronome.html)
+- [metronome mark](https://lilypond.org/doc/v2.26/Documentation/music-glossary/metronome-mark.html)
+- [metronomic indication](https://lilypond.org/doc/v2.26/Documentation/music-glossary/metronomic-indication.html)
+- [mezzo](https://lilypond.org/doc/v2.26/Documentation/music-glossary/mezzo.html)
+- [mezzo-soprano](https://lilypond.org/doc/v2.26/Documentation/music-glossary/mezzo_002dsoprano.html)
+- [middle C](https://lilypond.org/doc/v2.26/Documentation/music-glossary/middle-c.html)
+- [minor](https://lilypond.org/doc/v2.26/Documentation/music-glossary/minor.html)
+- [minor interval](https://lilypond.org/doc/v2.26/Documentation/music-glossary/minor-interval.html)
+- [mixolydian mode](https://lilypond.org/doc/v2.26/Documentation/music-glossary/mixolydian-mode.html)
+- [mode](https://lilypond.org/doc/v2.26/Documentation/music-glossary/mode.html)
+- [modulation](https://lilypond.org/doc/v2.26/Documentation/music-glossary/modulation.html)
+- [mordent](https://lilypond.org/doc/v2.26/Documentation/music-glossary/mordent.html)
+- [motif](https://lilypond.org/doc/v2.26/Documentation/music-glossary/motif.html)
+- [motive](https://lilypond.org/doc/v2.26/Documentation/music-glossary/motive.html)
+- [movement](https://lilypond.org/doc/v2.26/Documentation/music-glossary/movement.html)
+- [multi-measure rest](https://lilypond.org/doc/v2.26/Documentation/music-glossary/multi_002dmeasure-rest.html)
+- [natural](https://lilypond.org/doc/v2.26/Documentation/music-glossary/natural.html)
+- [neighbor tones](https://lilypond.org/doc/v2.26/Documentation/music-glossary/neighbor-tones.html)
+- [ninth](https://lilypond.org/doc/v2.26/Documentation/music-glossary/ninth.html)
+- [non-legato](https://lilypond.org/doc/v2.26/Documentation/music-glossary/non_002dlegato.html)
+- [note](https://lilypond.org/doc/v2.26/Documentation/music-glossary/note.html)
+- [note head](https://lilypond.org/doc/v2.26/Documentation/music-glossary/note-head.html)
+- [note names](https://lilypond.org/doc/v2.26/Documentation/music-glossary/note-names.html)
+- [note value](https://lilypond.org/doc/v2.26/Documentation/music-glossary/note-value.html)
+- [octavation](https://lilypond.org/doc/v2.26/Documentation/music-glossary/octavation.html)
+- [octave](https://lilypond.org/doc/v2.26/Documentation/music-glossary/octave.html)
+- [octave mark](https://lilypond.org/doc/v2.26/Documentation/music-glossary/octave-mark.html)
+- [octave marking](https://lilypond.org/doc/v2.26/Documentation/music-glossary/octave-marking.html)
+- [octave sign](https://lilypond.org/doc/v2.26/Documentation/music-glossary/octave-sign.html)
+- [ornament](https://lilypond.org/doc/v2.26/Documentation/music-glossary/ornament.html)
+- [ossia](https://lilypond.org/doc/v2.26/Documentation/music-glossary/ossia.html)
+- [part](https://lilypond.org/doc/v2.26/Documentation/music-glossary/part.html)
+- [pause](https://lilypond.org/doc/v2.26/Documentation/music-glossary/pause.html)
+- [pennant](https://lilypond.org/doc/v2.26/Documentation/music-glossary/pennant.html)
+- [percent repeat](https://lilypond.org/doc/v2.26/Documentation/music-glossary/percent-repeat.html)
+- [percussion](https://lilypond.org/doc/v2.26/Documentation/music-glossary/percussion.html)
+- [perfect interval](https://lilypond.org/doc/v2.26/Documentation/music-glossary/perfect-interval.html)
+- [phrase](https://lilypond.org/doc/v2.26/Documentation/music-glossary/phrase.html)
+- [phrasing](https://lilypond.org/doc/v2.26/Documentation/music-glossary/phrasing.html)
+- [piano](https://lilypond.org/doc/v2.26/Documentation/music-glossary/piano.html)
+- [pickup](https://lilypond.org/doc/v2.26/Documentation/music-glossary/pickup.html)
+- [pitch](https://lilypond.org/doc/v2.26/Documentation/music-glossary/pitch.html)
+- [pizzicato](https://lilypond.org/doc/v2.26/Documentation/music-glossary/pizzicato.html)
+- [polymeter](https://lilypond.org/doc/v2.26/Documentation/music-glossary/polymeter.html)
+- [polymetric](https://lilypond.org/doc/v2.26/Documentation/music-glossary/polymetric.html)
+- [polymetric time signature](https://lilypond.org/doc/v2.26/Documentation/music-glossary/polymetric-time-signature.html)
+- [polyphony](https://lilypond.org/doc/v2.26/Documentation/music-glossary/polyphony.html)
+- [portato](https://lilypond.org/doc/v2.26/Documentation/music-glossary/portato.html)
+- [power chord](https://lilypond.org/doc/v2.26/Documentation/music-glossary/power-chord.html)
+- [presto](https://lilypond.org/doc/v2.26/Documentation/music-glossary/presto.html)
+- [proportion](https://lilypond.org/doc/v2.26/Documentation/music-glossary/proportion.html)
+- [Pythagorean comma](https://lilypond.org/doc/v2.26/Documentation/music-glossary/pythagorean-comma.html)
+- [quadruplet](https://lilypond.org/doc/v2.26/Documentation/music-glossary/quadruplet.html)
+- [quality](https://lilypond.org/doc/v2.26/Documentation/music-glossary/quality.html)
+- [quarter note](https://lilypond.org/doc/v2.26/Documentation/music-glossary/quarter-note.html)
+- [quarter rest](https://lilypond.org/doc/v2.26/Documentation/music-glossary/quarter-rest.html)
+- [quarter tone](https://lilypond.org/doc/v2.26/Documentation/music-glossary/quarter-tone.html)
+- [quintuplet](https://lilypond.org/doc/v2.26/Documentation/music-glossary/quintuplet.html)
+- [rallentando](https://lilypond.org/doc/v2.26/Documentation/music-glossary/rallentando.html)
+- [relative key](https://lilypond.org/doc/v2.26/Documentation/music-glossary/relative-key.html)
+- [repeat](https://lilypond.org/doc/v2.26/Documentation/music-glossary/repeat.html)
+- [rest](https://lilypond.org/doc/v2.26/Documentation/music-glossary/rest.html)
+- [rhythm](https://lilypond.org/doc/v2.26/Documentation/music-glossary/rhythm.html)
+- [ritardando](https://lilypond.org/doc/v2.26/Documentation/music-glossary/ritardando.html)
+- [ritenuto](https://lilypond.org/doc/v2.26/Documentation/music-glossary/ritenuto.html)
+- [scale](https://lilypond.org/doc/v2.26/Documentation/music-glossary/scale.html)
+- [scale degree](https://lilypond.org/doc/v2.26/Documentation/music-glossary/scale-degree.html)
+- [scordatura](https://lilypond.org/doc/v2.26/Documentation/music-glossary/scordatura.html)
+- [score](https://lilypond.org/doc/v2.26/Documentation/music-glossary/score.html)
+- [second](https://lilypond.org/doc/v2.26/Documentation/music-glossary/second.html)
+- [semibreve](https://lilypond.org/doc/v2.26/Documentation/music-glossary/semibreve.html)
+- [semitone](https://lilypond.org/doc/v2.26/Documentation/music-glossary/semitone.html)
+- [seventh](https://lilypond.org/doc/v2.26/Documentation/music-glossary/seventh.html)
+- [sextolet](https://lilypond.org/doc/v2.26/Documentation/music-glossary/sextolet.html)
+- [sextuplet](https://lilypond.org/doc/v2.26/Documentation/music-glossary/sextuplet.html)
+- [shake](https://lilypond.org/doc/v2.26/Documentation/music-glossary/shake.html)
+- [sharp](https://lilypond.org/doc/v2.26/Documentation/music-glossary/sharp.html)
+- [simile](https://lilypond.org/doc/v2.26/Documentation/music-glossary/simile.html)
+- [simile mark](https://lilypond.org/doc/v2.26/Documentation/music-glossary/simile-mark.html)
+- [simple meter](https://lilypond.org/doc/v2.26/Documentation/music-glossary/simple-meter.html)
+- [sixteenth note](https://lilypond.org/doc/v2.26/Documentation/music-glossary/sixteenth-note.html)
+- [sixteenth rest](https://lilypond.org/doc/v2.26/Documentation/music-glossary/sixteenth-rest.html)
+- [sixth](https://lilypond.org/doc/v2.26/Documentation/music-glossary/sixth.html)
+- [sixty-fourth note](https://lilypond.org/doc/v2.26/Documentation/music-glossary/sixty_002dfourth-note.html)
+- [sixty-fourth rest](https://lilypond.org/doc/v2.26/Documentation/music-glossary/sixty_002dfourth-rest.html)
+- [slash repeat](https://lilypond.org/doc/v2.26/Documentation/music-glossary/slash-repeat.html)
+- [slur](https://lilypond.org/doc/v2.26/Documentation/music-glossary/slur.html)
+- [solmization](https://lilypond.org/doc/v2.26/Documentation/music-glossary/solmization.html)
+- [sonata](https://lilypond.org/doc/v2.26/Documentation/music-glossary/sonata.html)
+- [sonata form](https://lilypond.org/doc/v2.26/Documentation/music-glossary/sonata-form.html)
+- [song texts](https://lilypond.org/doc/v2.26/Documentation/music-glossary/song-texts.html)
+- [soprano](https://lilypond.org/doc/v2.26/Documentation/music-glossary/soprano.html)
+- [staccato](https://lilypond.org/doc/v2.26/Documentation/music-glossary/staccato.html)
+- [staff](https://lilypond.org/doc/v2.26/Documentation/music-glossary/staff.html)
+- [staves](https://lilypond.org/doc/v2.26/Documentation/music-glossary/staves.html)
+- [stem](https://lilypond.org/doc/v2.26/Documentation/music-glossary/stem.html)
+- [stringendo](https://lilypond.org/doc/v2.26/Documentation/music-glossary/stringendo.html)
+- [strings](https://lilypond.org/doc/v2.26/Documentation/music-glossary/strings.html)
+- [strong beat](https://lilypond.org/doc/v2.26/Documentation/music-glossary/strong-beat.html)
+- [subdominant](https://lilypond.org/doc/v2.26/Documentation/music-glossary/subdominant.html)
+- [submediant](https://lilypond.org/doc/v2.26/Documentation/music-glossary/submediant.html)
+- [subtonic](https://lilypond.org/doc/v2.26/Documentation/music-glossary/subtonic.html)
+- [sul G](https://lilypond.org/doc/v2.26/Documentation/music-glossary/sul-g.html)
+- [superdominant](https://lilypond.org/doc/v2.26/Documentation/music-glossary/superdominant.html)
+- [supertonic](https://lilypond.org/doc/v2.26/Documentation/music-glossary/supertonic.html)
+- [symphony](https://lilypond.org/doc/v2.26/Documentation/music-glossary/symphony.html)
+- [syncopation](https://lilypond.org/doc/v2.26/Documentation/music-glossary/syncopation.html)
+- [syntonic comma](https://lilypond.org/doc/v2.26/Documentation/music-glossary/syntonic-comma.html)
+- [system](https://lilypond.org/doc/v2.26/Documentation/music-glossary/system.html)
+- [temperament](https://lilypond.org/doc/v2.26/Documentation/music-glossary/temperament.html)
+- [tempo indication](https://lilypond.org/doc/v2.26/Documentation/music-glossary/tempo-indication.html)
+- [tenor](https://lilypond.org/doc/v2.26/Documentation/music-glossary/tenor.html)
+- [tenth](https://lilypond.org/doc/v2.26/Documentation/music-glossary/tenth.html)
+- [tenuto](https://lilypond.org/doc/v2.26/Documentation/music-glossary/tenuto.html)
+- [third](https://lilypond.org/doc/v2.26/Documentation/music-glossary/third.html)
+- [thirty-second note](https://lilypond.org/doc/v2.26/Documentation/music-glossary/thirty_002dsecond-note.html)
+- [thirty-second rest](https://lilypond.org/doc/v2.26/Documentation/music-glossary/thirty_002dsecond-rest.html)
+- [thorough bass](https://lilypond.org/doc/v2.26/Documentation/music-glossary/thorough-bass.html)
+- [tie](https://lilypond.org/doc/v2.26/Documentation/music-glossary/tie.html)
+- [time](https://lilypond.org/doc/v2.26/Documentation/music-glossary/time.html)
+- [time signature](https://lilypond.org/doc/v2.26/Documentation/music-glossary/time-signature.html)
+- [tone](https://lilypond.org/doc/v2.26/Documentation/music-glossary/tone.html)
+- [tonic](https://lilypond.org/doc/v2.26/Documentation/music-glossary/tonic.html)
+- [transposing instrument](https://lilypond.org/doc/v2.26/Documentation/music-glossary/transposing-instrument.html)
+- [transposition](https://lilypond.org/doc/v2.26/Documentation/music-glossary/transposition.html)
+- [treble clef](https://lilypond.org/doc/v2.26/Documentation/music-glossary/treble-clef.html)
+- [tremolo](https://lilypond.org/doc/v2.26/Documentation/music-glossary/tremolo.html)
+- [triad](https://lilypond.org/doc/v2.26/Documentation/music-glossary/triad.html)
+- [trill](https://lilypond.org/doc/v2.26/Documentation/music-glossary/trill.html)
+- [triple meter](https://lilypond.org/doc/v2.26/Documentation/music-glossary/triple-meter.html)
+- [triplet](https://lilypond.org/doc/v2.26/Documentation/music-glossary/triplet.html)
+- [tritone](https://lilypond.org/doc/v2.26/Documentation/music-glossary/tritone.html)
+- [tuning fork](https://lilypond.org/doc/v2.26/Documentation/music-glossary/tuning-fork.html)
+- [tuplet](https://lilypond.org/doc/v2.26/Documentation/music-glossary/tuplet.html)
+- [turn](https://lilypond.org/doc/v2.26/Documentation/music-glossary/turn.html)
+- [unison](https://lilypond.org/doc/v2.26/Documentation/music-glossary/unison.html)
+- [upbeat](https://lilypond.org/doc/v2.26/Documentation/music-glossary/upbeat.html)
+- [voice](https://lilypond.org/doc/v2.26/Documentation/music-glossary/voice.html)
+- [volta](https://lilypond.org/doc/v2.26/Documentation/music-glossary/volta.html)
+- [vowel transition](https://lilypond.org/doc/v2.26/Documentation/music-glossary/vowel-transition.html)
+- [weak beat](https://lilypond.org/doc/v2.26/Documentation/music-glossary/weak-beat.html)
+- [whole note](https://lilypond.org/doc/v2.26/Documentation/music-glossary/whole-note.html)
+- [whole rest](https://lilypond.org/doc/v2.26/Documentation/music-glossary/whole-rest.html)
+- [whole tone](https://lilypond.org/doc/v2.26/Documentation/music-glossary/whole-tone.html)
+- [woodwind](https://lilypond.org/doc/v2.26/Documentation/music-glossary/woodwind.html)
+- [bayati](https://lilypond.org/doc/v2.26/Documentation/music-glossary/bayati.html)
+- [iraq](https://lilypond.org/doc/v2.26/Documentation/music-glossary/iraq.html)
+- [kurd](https://lilypond.org/doc/v2.26/Documentation/music-glossary/kurd.html)
+- [makam](https://lilypond.org/doc/v2.26/Documentation/music-glossary/makam.html)
+- [makamlar](https://lilypond.org/doc/v2.26/Documentation/music-glossary/makamlar.html)
+- [maqam](https://lilypond.org/doc/v2.26/Documentation/music-glossary/maqam.html)
+- [rast](https://lilypond.org/doc/v2.26/Documentation/music-glossary/rast.html)
+- [semai](https://lilypond.org/doc/v2.26/Documentation/music-glossary/semai.html)
+- [sikah](https://lilypond.org/doc/v2.26/Documentation/music-glossary/sikah.html)
+- [taqasim](https://lilypond.org/doc/v2.26/Documentation/music-glossary/taqasim.html)

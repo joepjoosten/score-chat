@@ -35,14 +35,55 @@ await build({
       import { parseSvgFontManifest, withPinnedEmmentalerMetrics } from './src/fonts/glyphs.ts';
       import { renderLySourceToSvg } from './src/render/ly-to-svg.ts';
       const fontManifest = withPinnedEmmentalerMetrics(parseSvgFontManifest(font));
+      const SYSTEM_GROUP = /data-system-id="(system-\\d+)" transform="translate\\(([-\\d.e]+) ([-\\d.e]+)\\)"/g;
+      // Page-space boxes of note heads and rests, keyed to their source spans, so the
+      // app can map a highlighted region of the page back to notes in the source.
+      // Layout placements are relative to their system; the system's page offset is
+      // the translate on its group in the page SVG.
+      const collectAnchors = (result, pages) => {
+        const render = result.render;
+        const graph = result.result?.graph;
+        if (!render || !graph) return [];
+        const grobs = new Map(graph.grobs.map((grob) => [grob.id, grob]));
+        const systems = new Map();
+        pages.forEach((svg, page) => {
+          for (const match of svg.matchAll(SYSTEM_GROUP))
+            systems.set(match[1], { page, x: Number(match[2]), y: Number(match[3]) });
+        });
+        const anchors = [];
+        render.layouts.forEach((layout, index) => {
+          const system = systems.get('system-' + (index + 1));
+          if (!system) return;
+          for (const placement of layout.placements) {
+            const grob = grobs.get(placement.grobId);
+            const origin = grob?.origin;
+            if (!origin || (grob.name !== 'NoteHead' && grob.name !== 'Rest')) continue;
+            const { x, y } = placement.stencil.extent;
+            anchors.push({
+              kind: grob.name === 'Rest' ? 'rest' : 'note',
+              page: system.page,
+              system: index,
+              x: system.x + placement.x + x.min,
+              y: system.y + placement.y + y.min,
+              width: x.max - x.min,
+              height: y.max - y.min,
+              line: origin.startLine,
+              column: origin.startColumn,
+              endLine: origin.endLine,
+              endColumn: origin.endColumn,
+            });
+          }
+        });
+        return anchors;
+      };
       self.onmessage = ({ data: { id, source } }) => {
         try {
           const result = renderLySourceToSvg(source, { file: 'score.ly', fontManifest });
           const errors = result.diagnostics.filter(d => d.severity === 'error').map(d => d.message);
           const pages = result.render?.assembly.renderedPages.map(p => p.svg) ?? (result.svg ? [result.svg] : []);
-          self.postMessage({ id, pages, errors });
+          self.postMessage({ id, pages, errors, anchors: collectAnchors(result, pages) });
         } catch (error) {
-          self.postMessage({ id, pages: [], errors: [String(error)] });
+          self.postMessage({ id, pages: [], errors: [String(error)], anchors: [] });
         }
       };
     `,

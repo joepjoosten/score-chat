@@ -1,6 +1,9 @@
+import type { Anchor } from './selection'
+
 export interface RenderResult {
   pages: string[]
   errors: string[]
+  anchors: Anchor[]
 }
 export const MAX_SOURCE_LENGTH = 150_000
 
@@ -13,6 +16,7 @@ export function renderScore(
     return Promise.resolve({
       pages: [],
       errors: ['This score exceeds the 150,000-character limit.'],
+      anchors: [],
     })
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
@@ -40,12 +44,17 @@ export function renderScore(
       resolve({
         pages: [],
         errors: ['Rendering timed out after 20 seconds. Try a smaller score.'],
+        anchors: [],
       })
     }, 20_000)
     signal?.addEventListener('abort', abort, { once: true })
     worker.onmessage = ({ data }) => {
       cleanup()
-      resolve({ pages: data.pages, errors: data.errors })
+      resolve({
+        pages: data.pages,
+        errors: data.errors,
+        anchors: data.anchors ?? [],
+      })
     }
     worker.onerror = () => {
       cleanup()
@@ -54,6 +63,7 @@ export function renderScore(
         errors: [
           'The music renderer could not start. Reload the page and try again.',
         ],
+        anchors: [],
       })
     }
     worker.postMessage({ id: 1, source })

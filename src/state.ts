@@ -1,10 +1,13 @@
 import { Schema } from 'effect'
 import { Atom, AtomRegistry } from 'effect/unstable/reactivity'
+import type { SelectedNote } from './selection'
 
 export const Settings = Schema.Struct({
   apiKey: Schema.String,
   model: Schema.String,
   view: Schema.Literals(['score', 'source']),
+  /** How rendered pages are shown: as images (default) or inline SVG for inspection. Optional so older stored settings still decode. */
+  pages: Schema.optionalKey(Schema.Literals(['image', 'inline'])),
 })
 export type Settings = typeof Settings.Type
 export const defaults: Settings = {
@@ -67,6 +70,8 @@ export interface Message {
   id: string
   role: 'user' | 'assistant'
   text: string
+  /** Notes highlighted on the score when a user message was sent. */
+  selection?: SelectedNote[]
 }
 
 const storageErrors = new Set<string>()

@@ -17,20 +17,23 @@ Open **Settings**, enter an OpenRouter API key and a model ID with tool-calling 
 - The assistant lives in a floating panel over the score. Click its header (or press Escape in the composer) to collapse it to just the message box; sending a message reopens it.
 - Open a `.ly` file or download the current source. Each rendered page has an SVG download.
 - Ask the assistant to explain or edit music. Its Effect AI tools read, validate, and update the score in the browser. Invalid updates are rejected and returned to the model as diagnostics. Each message allows up to eight model steps; Stop cancels work.
-- Undo restores up to 20 score replacements made by the agent or file imports during the current session.
+- Use the **highlighter** in the toolbar to swipe a felt-tip marker over notes on the sheet music. Highlighted notes are attached to your next message as source line and column ranges, so "add staccato" applies to exactly those notes. Swipe again to add more, tap a highlighted note to lift the marker, and clear all from the chip above the composer. Any change to the score clears the highlight.
+- Undo and redo step through up to 20 score replacements made by the agent or file imports during the current session. Editing the source by hand discards the redo history.
+- Settings has a **Sheet music pages** option: pages are shown as images by default; choose **Inline SVG** to put the rendered markup in the document so systems and glyphs can be inspected with browser developer tools (scripts, embedded HTML, and non-web links are stripped first).
 - Settings (including your API key), selected view, and current score persist in local storage. Chat and undo history are session-only. Storage failures are shown in the UI.
 
 ## Client-side architecture
 
 Vite emits only static files into `dist/`. There is no backend, server function, or runtime package installation. Asset paths are relative, so the same build works at a domain root or a GitHub Pages repository path. This app does not use history routing or require rewrite rules.
 
-The LilyPond compiler runs in a dedicated Web Worker, with a 20-second timeout and a source-size limit. SVGs are displayed as images rather than injected HTML. The music font is bundled; rendering makes no external requests. The renderer supports a subset of LilyPond **2.24.4**, not all GNU LilyPond features, and reports unsupported syntax as diagnostics.
+The LilyPond compiler runs in a dedicated Web Worker, with a 20-second timeout and a source-size limit. Alongside each page's SVG, the worker reports the page-space boxes of note heads and rests together with their source spans (from the renderer's grob origins and system placements); the app draws highlights on a transparent overlay from that data. SVGs are displayed as images by default; the optional inline mode sanitizes the markup (`src/svg.ts`) before injecting it. The music font is bundled; rendering makes no external requests. The renderer supports a subset of LilyPond **2.24.4**, not all GNU LilyPond features, and reports unsupported syntax as diagnostics.
 
 The agent loop runs locally, but **model inference happens through OpenRouter**, not on your computer. Sending a message shares the current score and conversation with OpenRouter and the selected provider. Your API key is sent in the authorization header to OpenRouter; it is never included in the build, prompt, or displayed errors. Browser local storage is not an encrypted secret store; use a limited-spend key and avoid shared devices. Clearing the key in Settings and saving removes it from the stored settings.
 
 - `src/state.ts`: Effect Atom state and validated local-storage settings.
 - `src/renderer.ts`: cancellable browser worker requests.
 - `src/agent.ts`: Effect AI toolkit and OpenRouter integration, loaded when chat starts.
+- `src/selection.ts`: maps marker swipes over the rendered page to notes in the source and describes them to the model.
 - `src/App.tsx`: editor, SVG preview, settings, and conversation.
 
 ## Update the LilyPond renderer

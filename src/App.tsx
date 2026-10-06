@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import Markdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { useAtom, useAtomValue } from '@effect/atom-react'
 import {
   ArrowDownToLine,
@@ -9,6 +11,7 @@ import {
   Code2,
   FileMusic,
   FileUp,
+  Highlighter,
   LoaderCircle,
   MessageSquare,
   Music2,
@@ -17,6 +20,7 @@ import {
   Sparkles,
   Square,
   Trash2,
+  Redo2,
   Undo2,
   X,
   ZoomIn,
@@ -33,6 +37,15 @@ import {
 import type { Message, Settings } from './state'
 import { MAX_SOURCE_LENGTH, renderScore } from './renderer'
 import type { RenderResult } from './renderer'
+import {
+  anchorKey,
+  anchorsInBox,
+  dragBox,
+  markerStrokes,
+  selectedNotes,
+} from './selection'
+import type { Anchor, Box } from './selection'
+import { sanitizeSvg } from './svg'
 
 function download(name: string, content: string, type: string) {
   const url = URL.createObjectURL(new Blob([content], { type }))
@@ -41,6 +54,69 @@ function download(name: string, content: string, type: string) {
   link.download = name
   link.click()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+/** Felt-tip highlights over one rendered page, plus the marquee while swiping. */
+function PageOverlay({
+  page,
+  viewBox,
+  anchors,
+  selected,
+  active,
+  onSelect,
+}: {
+  page: number
+  viewBox: string
+  anchors: readonly Anchor[]
+  selected: ReadonlySet<string>
+  active: boolean
+  onSelect: (anchors: Anchor[]) => void
+}) {
+  const svg = useRef<SVGSVGElement>(null)
+  const start = useRef<{ x: number; y: number } | null>(null)
+  const [marquee, setMarquee] = useState<Box | null>(null)
+  const [, , width, height] = viewBox.split(' ').map(Number)
+  // The overlay shares the page's viewBox and aspect ratio, so page units scale linearly with pixels.
+  const toPage = (event: React.PointerEvent) => {
+    const rect = svg.current!.getBoundingClientRect()
+    return {
+      x: ((event.clientX - rect.left) / rect.width) * width,
+      y: ((event.clientY - rect.top) / rect.height) * height,
+    }
+  }
+  return (
+    <svg
+      ref={svg}
+      className={`page-overlay ${active ? 'active' : ''}`}
+      viewBox={viewBox}
+      aria-hidden="true"
+      onPointerDown={(event) => {
+        if (!active || event.button !== 0) return
+        event.currentTarget.setPointerCapture(event.pointerId)
+        start.current = toPage(event)
+        setMarquee(dragBox(start.current, start.current))
+      }}
+      onPointerMove={(event) => {
+        if (start.current) setMarquee(dragBox(start.current, toPage(event)))
+      }}
+      onPointerUp={(event) => {
+        if (!start.current) return
+        const box = dragBox(start.current, toPage(event))
+        start.current = null
+        setMarquee(null)
+        onSelect(anchorsInBox(anchors, box, page))
+      }}
+      onPointerCancel={() => {
+        start.current = null
+        setMarquee(null)
+      }}
+    >
+      {markerStrokes(anchors, selected, page).map((box, index) => (
+        <rect key={index} className="marker" rx={1} {...box} />
+      ))}
+      {marquee && <rect className="marquee" {...marquee} />}
+    </svg>
+  )
 }
 
 function SettingsDialog({ close }: { close: () => void }) {
@@ -118,6 +194,25 @@ function SettingsDialog({ close }: { close: () => void }) {
           </a>{' '}
           that supports tool calling. The default lets OpenRouter choose.
         </p>
+        <label htmlFor="pages">Sheet music pages</label>
+        <select
+          id="pages"
+          value={draft.pages ?? 'image'}
+          onChange={(e) =>
+            setDraft({
+              ...draft,
+              pages: e.target.value === 'inline' ? 'inline' : 'image',
+            })
+          }
+        >
+          <option value="image">Image (default)</option>
+          <option value="inline">Inline SVG (inspectable)</option>
+        </select>
+        <p className="field-help">
+          Inline SVG puts the rendered page markup in the document so you can
+          inspect systems and glyphs with browser developer tools. Scripts and
+          links are stripped from the markup.
+        </p>
         <div className="privacy-note">
           <div className="status-dot" />
           <p>
@@ -153,7 +248,10 @@ export function App() {
   const [rendered, setRendered] = useState<RenderResult>({
     pages: [],
     errors: [],
+    anchors: [],
   })
+  const [highlighting, setHighlighting] = useState(false)
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
   const [rendering, setRendering] = useState(true)
   const [renderedSource, setRenderedSource] = useState('')
   const [zoom, setZoom] = useState(85)
@@ -162,6 +260,7 @@ export function App() {
   const [agentStatus, setAgentStatus] = useState('')
   const [error, setError] = useState('')
   const [undo, setUndo] = useState<string[]>([])
+  const [redo, setRedo] = useState<string[]>([])
   const fileInput = useRef<HTMLInputElement>(null)
   const chatInput = useRef<HTMLTextAreaElement>(null)
   const chatEnd = useRef<HTMLDivElement>(null)
@@ -175,6 +274,8 @@ export function App() {
   useEffect(() => {
     const controller = new AbortController()
     setRendering(true)
+    // Highlights are keyed by source position, so any change to the source invalidates them.
+    setSelected(new Set())
     const timer = setTimeout(() => {
       renderScore(source, controller.signal)
         .then((result) => {
@@ -188,6 +289,7 @@ export function App() {
             setRendered({
               pages: [],
               errors: ['Rendering failed. Please try again.'],
+              anchors: [],
             })
             setRendering(false)
           }
@@ -207,8 +309,43 @@ export function App() {
     const current = registry.get(sourceAtom)
     if (current === next) return
     setUndo((values) => [...values.slice(-19), current])
+    setRedo([])
     setSource(next)
   }
+  // Moves the top of one history stack into the score and the current score onto the other.
+  function travel(
+    from: string[],
+    setFrom: typeof setUndo,
+    setTo: typeof setUndo,
+  ) {
+    const target = from.at(-1)
+    if (target === undefined) return
+    // Read the atom now: React runs updater callbacks later, after setSource has changed it.
+    const current = registry.get(sourceAtom)
+    setTo((values) => [...values.slice(-19), current])
+    setFrom(from.slice(0, -1))
+    setSource(target)
+  }
+
+  // A swipe over notes that are all highlighted already lifts the marker instead.
+  function toggleSelection(anchors: Anchor[]) {
+    if (!anchors.length) return
+    const keys = anchors.map(anchorKey)
+    setSelected((current) => {
+      const next = new Set(current)
+      if (keys.every((key) => current.has(key)))
+        for (const key of keys) next.delete(key)
+      else for (const key of keys) next.add(key)
+      return next
+    })
+  }
+  const inlinePages = useMemo(
+    () => (settings.pages === 'inline' ? rendered.pages.map(sanitizeSvg) : []),
+    [rendered.pages, settings.pages],
+  )
+  const highlightedNotes = selected.size
+    ? selectedNotes(rendered.anchors, selected, source)
+    : []
 
   async function send(event?: React.FormEvent) {
     event?.preventDefault()
@@ -219,7 +356,12 @@ export function App() {
     }
     const next: readonly Message[] = [
       ...messages,
-      { id: crypto.randomUUID(), role: 'user', text: input.trim() },
+      {
+        id: crypto.randomUUID(),
+        role: 'user',
+        text: input.trim(),
+        ...(highlightedNotes.length ? { selection: highlightedNotes } : {}),
+      },
     ]
     setMessages(next)
     setInput('')
@@ -246,7 +388,7 @@ export function App() {
             return existing
               ? current.map((message) =>
                   message.id === assistantId
-                    ? { ...message, text: `${message.text}\n\n${text}` }
+                    ? { ...message, text: message.text + text }
                     : message,
                 )
               : [...current, { id: assistantId, role: 'assistant', text }]
@@ -332,16 +474,30 @@ export function App() {
             title="Undo last score replacement"
             aria-label="Undo last score replacement"
             disabled={busy || !undo.length}
-            onClick={() => {
-              const previous = undo.at(-1)
-              if (previous !== undefined) {
-                setSource(previous)
-                setUndo(undo.slice(0, -1))
-              }
-            }}
+            onClick={() => travel(undo, setUndo, setRedo)}
           >
             <Undo2 size={16} />
           </button>
+          <button
+            className="icon-button"
+            title="Redo score replacement"
+            aria-label="Redo score replacement"
+            disabled={busy || !redo.length}
+            onClick={() => travel(redo, setRedo, setUndo)}
+          >
+            <Redo2 size={16} />
+          </button>
+          {settings.view === 'score' && (
+            <button
+              className={`icon-button ${highlighting ? 'active' : ''}`}
+              title="Highlight notes for the assistant"
+              aria-label="Highlight notes for the assistant"
+              aria-pressed={highlighting}
+              onClick={() => setHighlighting(!highlighting)}
+            >
+              <Highlighter size={16} />
+            </button>
+          )}
           {settings.view === 'score' && (
             <div className="zoom-controls">
               <button
@@ -462,7 +618,11 @@ export function App() {
               value={source}
               readOnly={busy}
               maxLength={MAX_SOURCE_LENGTH}
-              onChange={(e) => setSource(e.target.value)}
+              onChange={(e) => {
+                // Typing after an undo starts a new branch; the undone replacement is no longer redoable.
+                if (redo.length) setRedo([])
+                setSource(e.target.value)
+              }}
             />
           </div>
         ) : (
@@ -487,9 +647,26 @@ export function App() {
                   width: `min(${zoom * 8.6}px, ${(zoom / 85) * 100}%)`,
                 }}
               >
-                <img
-                  alt={`Sheet music, page ${index + 1}`}
-                  src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(page)}`}
+                {settings.pages === 'inline' ? (
+                  <div
+                    className="sheet-svg"
+                    role="img"
+                    aria-label={`Sheet music, page ${index + 1}`}
+                    dangerouslySetInnerHTML={{ __html: inlinePages[index] }}
+                  />
+                ) : (
+                  <img
+                    alt={`Sheet music, page ${index + 1}`}
+                    src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(page)}`}
+                  />
+                )}
+                <PageOverlay
+                  page={index}
+                  viewBox={page.match(/viewBox="([^"]+)"/)?.[1] ?? '0 0 1 1'}
+                  anchors={rendered.anchors}
+                  selected={selected}
+                  active={highlighting && fresh}
+                  onSelect={toggleSelection}
                 />
                 <button
                   className="page-download"
@@ -532,21 +709,13 @@ export function App() {
               <span className="assistant-icon">
                 <Sparkles size={14} />
               </span>
-              <span className="chat-heading-text">
-                <h2>Assistant</h2>
+              <h2>Assistant</h2>
+              {busy && (
                 <span className="chat-subtitle">
-                  {busy ? (
-                    <>
-                      <LoaderCircle size={11} className="spin" />
-                      {agentStatus || 'Connecting…'}
-                    </>
-                  ) : messages.length ? (
-                    `${messages.length} message${messages.length === 1 ? '' : 's'}`
-                  ) : (
-                    'Your composing partner'
-                  )}
+                  <LoaderCircle size={11} className="spin" />
+                  {agentStatus || 'Connecting…'}
                 </span>
-              </span>
+              )}
               {chatOpen ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
             </button>
             {chatOpen && (
@@ -564,7 +733,7 @@ export function App() {
               </button>
             )}
           </div>
-          {chatOpen && (
+          {chatOpen && messages.length > 0 && (
             <div
               id="chat-conversation"
               className="chat-messages"
@@ -572,33 +741,6 @@ export function App() {
               aria-label="Conversation"
               aria-live="polite"
             >
-              {!messages.length && (
-                <div className="chat-welcome">
-                  <p>A new idea starts with a note.</p>
-                  <span>
-                    Ask me to write a melody, change a key, or help shape your
-                    score.
-                  </span>
-                  <div className="suggestions">
-                    {[
-                      'Make this melody more playful',
-                      'Transpose to G major',
-                      'Explain this score',
-                    ].map((text) => (
-                      <button
-                        key={text}
-                        onClick={() => {
-                          setInput(text)
-                          chatInput.current?.focus()
-                        }}
-                      >
-                        {text}
-                        <ArrowUp size={13} />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
               {messages.map((message) => (
                 <div key={message.id} className={`message ${message.role}`}>
                   <span className="message-author">
@@ -609,7 +751,21 @@ export function App() {
                     )}
                     {message.role === 'assistant' ? 'Assistant' : 'You'}
                   </span>
-                  <div>{message.text}</div>
+                  {message.role === 'assistant' ? (
+                    <div className="message-body">
+                      <Markdown remarkPlugins={[remarkGfm]}>
+                        {message.text}
+                      </Markdown>
+                    </div>
+                  ) : (
+                    <div className="message-text">{message.text}</div>
+                  )}
+                  {message.selection && (
+                    <div className="message-selection">
+                      <Highlighter size={11} />
+                      {message.selection.map((note) => note.text).join(' ')}
+                    </div>
+                  )}
                 </div>
               ))}
               {busy && (
@@ -634,10 +790,34 @@ export function App() {
             </div>
           )}
           <form className="chat-composer" onSubmit={send}>
+            {highlightedNotes.length > 0 && (
+              <div className="selection-chip" role="status">
+                <Highlighter size={12} />
+                <span>
+                  {highlightedNotes.length}{' '}
+                  {highlightedNotes.length === 1 ? 'note' : 'notes'} highlighted
+                </span>
+                <span className="selection-preview">
+                  {highlightedNotes.map((note) => note.text).join(' ')}
+                </span>
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label="Clear highlights"
+                  onClick={() => setSelected(new Set())}
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            )}
             <textarea
               ref={chatInput}
               aria-label="Message the music assistant"
-              placeholder="What would you like to create?"
+              placeholder={
+                highlightedNotes.length
+                  ? 'What should change for the highlighted notes?'
+                  : 'What would you like to create?'
+              }
               value={input}
               disabled={busy}
               onChange={(event) => setInput(event.target.value)}
@@ -666,9 +846,6 @@ export function App() {
                 {settings.apiKey ? settings.model : 'Connect OpenRouter'}
                 <ChevronDown size={12} />
               </button>
-              <span className="composer-hint">
-                Enter to send · Shift + Enter for a new line
-              </span>
               {busy ? (
                 <button
                   type="button"
@@ -690,12 +867,6 @@ export function App() {
               )}
             </div>
           </form>
-          {chatOpen && (
-            <div className="chat-footer">
-              <span className="status-dot" /> Tools run locally · AI via
-              OpenRouter
-            </div>
-          )}
         </section>
       </main>
       {settingsOpen && <SettingsDialog close={() => setSettingsOpen(false)} />}

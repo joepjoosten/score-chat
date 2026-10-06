@@ -4,6 +4,8 @@ export default defineConfig({
   testDir: './tests/browser',
   fullyParallel: true,
   retries: process.env.CI ? 1 : 0,
+  // Engraving a page can take a few seconds on shared CI runners.
+  expect: { timeout: 15_000 },
   use: {
     baseURL: 'http://127.0.0.1:4173/score-chat/',
     trace: 'retain-on-failure',

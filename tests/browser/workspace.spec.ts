@@ -211,14 +211,14 @@ test('highlighted notes reach the model as source positions and get edited', asy
     .getByRole('button', { name: 'Highlight notes for the assistant' })
     .click()
   // Swipe across the first bar. The page viewBox is 119.5 x 169 units and the
-  // first system's staff sits around y = 30, starting at x ≈ 22.
+  // first system's note heads sit around y = 22, starting at x ≈ 23.
   const box = (await image.boundingBox())!
   const at = (x: number, y: number) => ({
     x: box.x + (x / 119.5015) * box.width,
     y: box.y + (y / 169.0093) * box.height,
   })
-  const from = at(20, 27)
-  const to = at(48, 34)
+  const from = at(20, 19)
+  const to = at(45, 25)
   await page.mouse.move(from.x, from.y)
   await page.mouse.down()
   await page.mouse.move(to.x, to.y, { steps: 6 })
@@ -228,7 +228,7 @@ test('highlighted notes reach the model as source positions and get edited', asy
   await expect(chip).toContainText('c4 e g e')
   await expect(page.locator('.page-overlay .marker')).toHaveCount(1)
   // Tapping a highlighted note lifts the marker from it again.
-  const tap = at(23.5, 33)
+  const tap = at(23.5, 23.2)
   await page.mouse.click(tap.x, tap.y)
   await expect(chip).toContainText('3 notes highlighted')
   await expect(chip).toContainText('e g e')
@@ -326,12 +326,12 @@ test('pages can be shown as inline SVG for inspection, with active content strip
   const box = (await image.boundingBox())!
   await page.mouse.move(
     box.x + (20 / 119.5015) * box.width,
-    box.y + (27 / 169.0093) * box.height,
+    box.y + (19 / 169.0093) * box.height,
   )
   await page.mouse.down()
   await page.mouse.move(
-    box.x + (48 / 119.5015) * box.width,
-    box.y + (34 / 169.0093) * box.height,
+    box.x + (45 / 119.5015) * box.width,
+    box.y + (25 / 169.0093) * box.height,
     { steps: 4 },
   )
   await page.mouse.up()

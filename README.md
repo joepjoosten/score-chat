@@ -1,6 +1,6 @@
 # Score Chat
 
-A static React + TypeScript workspace for editing LilyPond, viewing SVG sheet music, and chatting with a music agent. Effect, Effect Atom React, and the Effect OpenRouter provider are pinned to **4.0.0-rc.112**. Effect v4 provides the core atom and AI modules inside `effect/unstable`.
+A static React + TypeScript workspace for editing LilyPond, viewing SVG sheet music, and chatting with a music agent. Effect, Effect Atom React, and the Effect OpenRouter provider are pinned to the **4.0.1** release. Effect v4 provides the atom, AI and HTTP modules as `effect/reactivity`, `effect/ai` and `effect/http`.
 
 ## Run locally
 

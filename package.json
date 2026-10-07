@@ -16,9 +16,9 @@
     "docs:sync": "bun scripts/sync-docs.mjs"
   },
   "dependencies": {
-    "@effect/ai-openrouter": "4.0.0-rc.112",
-    "@effect/atom-react": "4.0.0-rc.112",
-    "effect": "4.0.0-rc.112",
+    "@effect/ai-openrouter": "4.0.1",
+    "@effect/atom-react": "4.0.1",
+    "effect": "4.0.1",
     "lucide-react": "^0.468.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

@@ -2,12 +2,27 @@ import { Schema } from 'effect'
 import { Atom, AtomRegistry } from 'effect/unstable/reactivity'
 import type { SelectedNote } from './selection'
 
+export const reasoningEfforts = [
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+] as const
 export const Settings = Schema.Struct({
   apiKey: Schema.String,
   model: Schema.String,
   view: Schema.Literals(['score', 'source']),
   /** How rendered pages are shown: as images (default) or inline SVG for inspection. Optional so older stored settings still decode. */
   pages: Schema.optionalKey(Schema.Literals(['image', 'inline'])),
+  /** Reasoning effort sent to OpenRouter; absent leaves the choice to the model, `none` turns thinking off. */
+  reasoning: Schema.optionalKey(Schema.Literals(reasoningEfforts)),
+  /** Size of the assistant dock after the user resizes it, in pixels. */
+  dock: Schema.optionalKey(
+    Schema.Struct({ width: Schema.Number, height: Schema.Number }),
+  ),
 })
 export type Settings = typeof Settings.Type
 export const defaults: Settings = {
@@ -72,6 +87,30 @@ export interface Message {
   text: string
   /** Score elements highlighted when a user message was sent. */
   selection?: SelectedNote[]
+  /** Assistant output in arrival order; `text` holds only the reply text sent back as history. */
+  parts?: MessagePart[]
+}
+export interface MessagePart {
+  type: 'text' | 'thinking'
+  text: string
+}
+
+/** Appends a streamed chunk to an assistant message, starting a new part when the kind changes. */
+export function appendChunk(
+  message: Message,
+  type: MessagePart['type'],
+  chunk: string,
+): Message {
+  const parts = message.parts ?? []
+  const last = parts.at(-1)
+  return {
+    ...message,
+    text: type === 'text' ? message.text + chunk : message.text,
+    parts:
+      last?.type === type
+        ? [...parts.slice(0, -1), { type, text: last.text + chunk }]
+        : [...parts, { type, text: chunk }],
+  }
 }
 
 const storageErrors = new Set<string>()

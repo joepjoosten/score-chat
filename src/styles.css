@@ -482,6 +482,76 @@ svg {
   scrollbar-width: thin;
   padding: 8px 8px 2px;
 }
+/* Resized dock: the conversation keeps the chosen height, shrinking only when the stage is too short. */
+.chat-dock[data-sized] .chat-messages {
+  flex: 0 1 var(--chat-height);
+  max-height: none;
+}
+.dock-resize {
+  position: absolute;
+  top: -5px;
+  left: -5px;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+  touch-action: none;
+  border-radius: 14px 0 0 0;
+  z-index: 1;
+}
+.dock-resize::before {
+  content: '';
+  position: absolute;
+  top: 7px;
+  left: 7px;
+  width: 7px;
+  height: 7px;
+  border-top: 2px solid #b6bfa8;
+  border-left: 2px solid #b6bfa8;
+  border-top-left-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.chat-dock:hover .dock-resize::before,
+.dock-resize:focus-visible::before {
+  opacity: 1;
+}
+.dock-resize:hover::before,
+.dock-resize:focus-visible::before {
+  border-color: #667e4e;
+}
+.thinking {
+  margin: 4px 0 8px;
+}
+.thinking-toggle {
+  gap: 5px;
+  padding: 2px 6px 2px 4px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #8d987d;
+}
+.thinking-toggle:hover {
+  background: #eef0e6;
+}
+.thinking-text {
+  margin-top: 4px;
+  padding: 6px 9px;
+  border-left: 2px solid #dfe3d4;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #87917a;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* While streaming, show only the last ten lines; earlier ones overflow off the top. */
+.thinking-text.tail {
+  max-height: calc(10 * 1.5em + 12px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  mask-image: linear-gradient(transparent, #000 1.5em);
+}
 .chat-composer {
   margin: 6px;
   border: 1px solid #d7ddcd;

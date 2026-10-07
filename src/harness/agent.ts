@@ -1,6 +1,6 @@
 import { Effect, Layer, Redacted, Stream } from 'effect'
-import { LanguageModel, Prompt, type Response } from 'effect/unstable/ai'
-import { FetchHttpClient } from 'effect/unstable/http'
+import { LanguageModel, Prompt, type Response } from 'effect/ai'
+import { FetchHttpClient } from 'effect/http'
 import {
   OpenRouterClient,
   OpenRouterLanguageModel,
@@ -68,7 +68,7 @@ export function runAgent(agentOptions: AgentOptions): Promise<void> {
     }
     for (let step = 1; ; step++) {
       options.onStatus(`Thinking${step > 1 ? ` · step ${step}` : ''}…`)
-      const parts: Response.StreamPart<typeof ScoreTools.tools>[] = []
+      const parts: Response.StreamPart<typeof ScoreTools.tools, 'opaque'>[] = []
       inBlock = false
       yield* LanguageModel.streamText({ prompt, toolkit: ScoreTools }).pipe(
         Stream.runForEach((part) =>

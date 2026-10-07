@@ -1,5 +1,5 @@
 import { Effect, Schema } from 'effect'
-import { Tool, Toolkit } from 'effect/unstable/ai'
+import { Tool, Toolkit } from 'effect/ai'
 import { renderScore } from '../renderer'
 import { applyEdits, readLines, searchLines } from './scoreText'
 import { createDocsIndex, formatSearchResults, readDoc } from './docs'

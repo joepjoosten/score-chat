@@ -485,10 +485,8 @@ test('agent searches, edits with exact replacements, and shows its thinking', as
   const searched = bodies[1].messages.find(
     (message) => message.role === 'tool',
   )!.content as string
-  // Tool results are sent back JSON-encoded.
-  expect(JSON.parse(searched)).toMatch(
-    /^1 matching line\(s\):\n\d+\t\s+\\tempo "Andante"/,
-  )
+  // Tool results reach the model as plain text, not JSON-encoded strings.
+  expect(searched).toMatch(/^1 matching line\(s\):\n\d+\t\s+\\tempo "Andante"/)
   expect(JSON.stringify(bodies[2].messages)).toContain('Applied successfully')
   // Once done, the thinking folds away fully and can be expanded in full.
   await expect(thinking).toHaveCount(0)
@@ -525,7 +523,7 @@ test('agent searches and reads the bundled LilyPond documentation', async ({
     async (route) => {
       const messages = route.request().postDataJSON().messages
       const tool = messages.at(-1)
-      if (tool.role === 'tool') results.push(JSON.parse(tool.content))
+      if (tool.role === 'tool') results.push(tool.content)
       if (results.length === 0)
         await route.fulfill(
           call('find', 'search_docs', {

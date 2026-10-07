@@ -16,9 +16,12 @@ Open **Settings**, enter an OpenRouter API key and a model ID with tool-calling 
 - Switch between **Sheet music** and **LilyPond**; edits render automatically. The score fills the window below a single toolbar.
 - The assistant lives in a floating panel over the score. Click its header (or press Escape in the composer) to collapse it to just the message box; sending a message reopens it.
 - Open a `.ly` file or download the current source. Each rendered page has an SVG download.
-- Ask the assistant to explain or edit music. Its Effect AI tools read, validate, and update the score in the browser. Invalid updates are rejected and returned to the model as diagnostics. Each message allows up to eight model steps; Stop cancels work.
+- Ask the assistant to explain or edit music. Its Effect AI tools search, read (by line range), validate, and edit the score in the browser; targeted changes are sent as exact text replacements instead of a full rewrite, and the score is no longer embedded in the prompt. Invalid edits are rejected and returned to the model as diagnostics. The assistant keeps working until it is done; **Stop** ends the turn immediately.
+- The assistant can look things up in the bundled LilyPond 2.24.4 documentation (Notation Reference, snippets and Music Glossary) with full-text search. Every example in it is marked by whether Score Chat's renderer supports it.
+- When the model exposes its reasoning, the latest ten lines stream into the chat while it thinks, then fold away; expand **Thought process** to read it all. Drag the assistant's top-left corner to resize it (double-click to reset); the size is remembered.
 - Use the **highlighter** in the toolbar to swipe a felt-tip marker over the sheet music: notes, rests, articulations, dynamics, slurs, ties, hairpins, tuplets, key and time signatures, lyrics, chord names, text and more. Each highlighted element is attached to your next message as the source line and column range of the music event that produced it, together with its kind and the full source line, so "make this louder" or "remove this slur" applies to exactly those elements. Large elements such as slurs and hairpins are picked up when the swipe covers their centre; a tap picks the smallest element under the marker. Swipe again to add more, tap a highlighted element to lift the marker, and clear all from the chip above the composer. Any change to the score clears the highlight.
 - Undo and redo step through up to 20 score replacements made by the agent or file imports during the current session. Editing the source by hand discards the redo history.
+- Settings has a **Thinking** option: leave it on the model default, turn thinking off, or turn it on with an effort level from minimal to maximum. It's sent to OpenRouter as the reasoning effort; models without reasoning support ignore it.
 - Settings has a **Sheet music pages** option: pages are shown as images by default; choose **Inline SVG** to put the rendered markup in the document so systems and glyphs can be inspected with browser developer tools (scripts, embedded HTML, and non-web links are stripped first).
 - Settings (including your API key), selected view, and current score persist in local storage. Chat and undo history are session-only. Storage failures are shown in the UI.
 
@@ -32,7 +35,7 @@ The agent loop runs locally, but **model inference happens through OpenRouter**,
 
 - `src/state.ts`: Effect Atom state and validated local-storage settings.
 - `src/renderer.ts`: cancellable browser worker requests.
-- `src/agent.ts`: Effect AI toolkit and OpenRouter integration, loaded when chat starts.
+- `src/harness/`: the agent harness, loaded when chat starts — `agent.ts` runs the model loop through OpenRouter, `tools.ts` defines the score tools, `prompt.ts` builds the system prompt and history, `scoreText.ts` holds the pure read, search and edit helpers, and `docs.ts` searches the bundled documentation (BM25 over titles, index entries and text) once `public/docs/lilypond-docs.json` is fetched on first use.
 - `src/selection.ts`: maps marker swipes over the rendered page to notes in the source and describes them to the model.
 - `src/App.tsx`: editor, SVG preview, settings, and conversation.
 
@@ -51,6 +54,18 @@ npm run test:e2e
 ```
 
 Commit the updated worker and version metadata together. The sync command requires a clean source checkout and does not change it. It bundles the same `renderLySourceToSvg` and `parseSvgFontManifest` entry points used by that project's browser playground. The bundle is public when the app is deployed.
+
+## Update the LilyPond documentation
+
+The agent's documentation is generated from the LilyPond 2.24.4 sources in the same lilypond-typescript checkout. The script converts the Texinfo Notation Reference and Music Glossary and the snippet collection to text, and compiles every example with the renderer to record whether Score Chat supports it. Examples that need an explicit `\score` or `\new Staff` for the renderer are stored in the form that rendered. It needs [Bun](https://bun.sh), because it loads the renderer's TypeScript directly, and takes about a minute:
+
+```sh
+npm run docs:sync
+# Or select a different checkout:
+npm run docs:sync -- /path/to/lilypond-typescript
+```
+
+Rerun it after renderer updates so the support markers stay accurate, and commit `public/docs/`. The LilyPond documentation is licensed under the GNU Free Documentation License (included as `public/docs/COPYING.FDL`); the snippets are in the public domain. `public/llms.txt` is a separate hand-made index of the 2.26 manuals on lilypond.org and is not used by the agent.
 
 ## Checks
 

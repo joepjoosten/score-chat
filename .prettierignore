@@ -1,5 +1,6 @@
 public/renderer/worker.js
 public/renderer/data/
+public/docs/
 package-lock.json
 dist/
 node_modules/

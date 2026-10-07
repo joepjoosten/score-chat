@@ -13,7 +13,7 @@ async function configure(page: Page) {
 // Builds a streamed chat completion (server-sent events) the way OpenRouter
 // sends it: one chunk per text delta or tool call, then the finish reason.
 function stream(
-  message: { content?: string; tool_calls?: object[] },
+  message: { reasoning?: string; content?: string; tool_calls?: object[] },
   finish = 'stop',
 ) {
   const chunk = (delta: object, finish_reason: string | null = null) =>
@@ -24,9 +24,15 @@ function stream(
       created: 1,
       choices: [{ index: 0, delta, finish_reason, logprobs: null }],
     })}\n\n`
-  const deltas = (message.content ?? '')
-    .split(/(?<= )/)
-    .map((content) => chunk({ role: 'assistant', content }))
+  const deltas = [
+    ...(message.reasoning ?? '')
+      .split(/(?<=\n)/)
+      .filter(Boolean)
+      .map((reasoning) => chunk({ role: 'assistant', reasoning })),
+    ...(message.content ?? '')
+      .split(/(?<= )/)
+      .map((content) => chunk({ role: 'assistant', content })),
+  ]
   if (message.tool_calls)
     deltas.push(chunk({ role: 'assistant', tool_calls: message.tool_calls }))
   return {
@@ -132,7 +138,8 @@ test('agent executes a validated score edit through Effect AI and preserves tool
       ).toContain('update_score')
       calls++
       if (calls === 1) {
-        expect(body.messages[0].content[0].text).toContain(original)
+        // The score is fetched through tools rather than embedded in the prompt.
+        expect(body.messages[0].content[0].text).not.toContain(original)
         await route.fulfill(
           stream(
             {
@@ -238,7 +245,6 @@ test('highlighted notes reach the model as source positions and get edited', asy
   )
   await expect(chip).toContainText('\\time 4/4 \\p e g e')
 
-  let original = ''
   let calls = 0
   await page.route(
     'https://openrouter.ai/api/v1/chat/completions',
@@ -260,8 +266,6 @@ test('highlighted notes reach the model as source positions and get edited', asy
         expect(text).toContain('line 14, columns 12-12 (note): `g`')
         expect(text).toContain('line 14, columns 14-14 (note): `e`')
         expect(text).not.toContain('`c4`')
-        original =
-          body.messages[0].content[0].text.split('Current score:\n\n')[1]
         await route.fulfill(
           stream(
             {
@@ -271,12 +275,14 @@ test('highlighted notes reach the model as source positions and get edited', asy
                   id: 'edit-1',
                   type: 'function',
                   function: {
-                    name: 'update_score',
+                    name: 'edit_score',
                     arguments: JSON.stringify({
-                      source: original.replace(
-                        'c4\\p e g e |',
-                        'c4\\p e-. g-. e-. |',
-                      ),
+                      edits: [
+                        {
+                          old_text: 'c4\\p e g e |',
+                          new_text: 'c4\\p e-. g-. e-. |',
+                        },
+                      ],
                     }),
                   },
                 },
@@ -304,9 +310,9 @@ test('highlighted notes reach the model as source positions and get edited', asy
   // The edit invalidates the highlight; the chip is gone and the score changed.
   await expect(chip).toHaveCount(0)
   await page.getByRole('tab', { name: 'LilyPond', exact: true }).click()
-  await expect(page.getByLabel('LilyPond source')).toHaveValue(
-    original.replace('c4\\p e g e |', 'c4\\p e-. g-. e-. |'),
-  )
+  const edited = await page.getByLabel('LilyPond source').inputValue()
+  expect(edited).toContain('    c4\\p e-. g-. e-. | f4 a g2 |\n')
+  expect(edited).not.toContain('c4\\p e g e |')
 })
 
 test('highlighting works even when the score turns point-and-click off', async ({
@@ -405,6 +411,204 @@ test('pages can be shown as inline SVG for inspection, with active content strip
   expect(sanitized).not.toContain('foreignObject')
   expect(sanitized).toContain('<rect')
   expect(sanitized).not.toContain('width="10mm"')
+})
+
+test('agent searches, edits with exact replacements, and shows its thinking', async ({
+  page,
+}) => {
+  await page.goto('./')
+  await configure(page)
+  await page.getByRole('tab', { name: 'LilyPond', exact: true }).click()
+  const editor = page.getByLabel('LilyPond source')
+  const original = await editor.inputValue()
+  const thoughts = Array.from(
+    { length: 14 },
+    (_, index) => `thought ${index + 1}`,
+  ).join('\n')
+  let release!: () => void
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const bodies: { messages: { role: string; content: unknown }[] }[] = []
+  const call = (id: string, name: string, args: object) => ({
+    tool_calls: [
+      {
+        index: 0,
+        id,
+        type: 'function',
+        function: { name, arguments: JSON.stringify(args) },
+      },
+    ],
+  })
+  await page.route(
+    'https://openrouter.ai/api/v1/chat/completions',
+    async (route) => {
+      bodies.push(route.request().postDataJSON())
+      if (bodies.length === 1)
+        await route.fulfill(
+          stream(
+            {
+              reasoning: thoughts,
+              ...call('find', 'search_score', { query: 'andante' }),
+            },
+            'tool_calls',
+          ),
+        )
+      else if (bodies.length === 2) {
+        await held
+        await route.fulfill(
+          stream(
+            call('edit', 'edit_score', {
+              edits: [{ old_text: '"Andante"', new_text: '"Allegro"' }],
+            }),
+            'tool_calls',
+          ),
+        )
+      } else await route.fulfill(stream({ content: 'Now it is Allegro.' }))
+    },
+  )
+  await page.getByLabel('Message the music assistant').fill('Make it faster')
+  await page.getByRole('button', { name: 'Send message' }).click()
+  // While the model is still working, its thinking tails the last ten lines.
+  const thinking = page.locator('.thinking-text')
+  await expect(thinking).toBeVisible()
+  await expect(thinking).toContainText('thought 14')
+  const lineHeight = await thinking.evaluate(
+    (element) => parseFloat(getComputedStyle(element).lineHeight) || 16.5,
+  )
+  expect((await thinking.boundingBox())!.height).toBeLessThan(
+    lineHeight * 11 + 12,
+  )
+  release()
+  await expect(page.getByText('Now it is Allegro.')).toBeVisible()
+  await expect(editor).toHaveValue(original.replace('"Andante"', '"Allegro"'))
+  const searched = bodies[1].messages.find(
+    (message) => message.role === 'tool',
+  )!.content as string
+  // Tool results are sent back JSON-encoded.
+  expect(JSON.parse(searched)).toMatch(
+    /^1 matching line\(s\):\n\d+\t\s+\\tempo "Andante"/,
+  )
+  expect(JSON.stringify(bodies[2].messages)).toContain('Applied successfully')
+  // Once done, the thinking folds away fully and can be expanded in full.
+  await expect(thinking).toHaveCount(0)
+  await page.getByRole('button', { name: 'Thought process' }).click()
+  await expect(thinking).toContainText('thought 1\n')
+  await expect(thinking).toContainText('thought 14')
+  expect((await thinking.boundingBox())!.height).toBeGreaterThan(
+    lineHeight * 13,
+  )
+})
+
+test('agent searches and reads the bundled LilyPond documentation', async ({
+  page,
+}) => {
+  await page.goto('./')
+  await configure(page)
+  const results: string[] = []
+  const call = (id: string, name: string, args: object) =>
+    stream(
+      {
+        tool_calls: [
+          {
+            index: 0,
+            id,
+            type: 'function',
+            function: { name, arguments: JSON.stringify(args) },
+          },
+        ],
+      },
+      'tool_calls',
+    )
+  await page.route(
+    'https://openrouter.ai/api/v1/chat/completions',
+    async (route) => {
+      const messages = route.request().postDataJSON().messages
+      const tool = messages.at(-1)
+      if (tool.role === 'tool') results.push(JSON.parse(tool.content))
+      if (results.length === 0)
+        await route.fulfill(
+          call('find', 'search_docs', {
+            query: 'crescendo hairpin',
+            kind: 'notation',
+          }),
+        )
+      else if (results.length === 1)
+        await route.fulfill(call('read', 'read_doc', { id: 'dynamics' }))
+      else await route.fulfill(stream({ content: 'Use \\< and \\!.' }))
+    },
+  )
+  await page
+    .getByLabel('Message the music assistant')
+    .fill('How do hairpins work?')
+  await page.getByRole('button', { name: 'Send message' }).click()
+  await expect(page.locator('.message.assistant')).toContainText('Use')
+  expect(results[0]).toMatch(/^Top \d+ results for "crescendo hairpin"/)
+  expect(results[0]).toContain('Dynamics [notation] id: dynamics')
+  expect(results[1]).toMatch(
+    /^# Dynamics\nLilyPond 2\.24\.4 Notation Reference/,
+  )
+  expect(results[1]).toContain('Example (renders in Score Chat):')
+  expect(results[1]).toContain('\\version "2.24.4"')
+})
+
+test('the thinking setting sets the reasoning effort sent to OpenRouter', async ({
+  page,
+}) => {
+  await page.goto('./')
+  await configure(page)
+  const bodies: Record<string, unknown>[] = []
+  await page.route('https://openrouter.ai/api/v1/chat/completions', (route) => {
+    bodies.push(route.request().postDataJSON())
+    return route.fulfill(stream({ content: 'Hi.' }))
+  })
+  const ask = async () => {
+    await page.getByLabel('Message the music assistant').fill('Hello')
+    await page.getByRole('button', { name: 'Send message' }).click()
+    await expect(page.getByLabel('Message the music assistant')).toBeEnabled()
+  }
+  await ask()
+  expect(bodies[0]).not.toHaveProperty('reasoning')
+  expect(bodies[0].max_tokens).toBe(8192)
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByLabel('Thinking').selectOption('high')
+  await page.getByRole('button', { name: 'Save settings' }).click()
+  await page.reload()
+  await ask()
+  expect(bodies[1].reasoning).toEqual({ effort: 'high' })
+  expect(bodies[1].max_tokens).toBe(16384)
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByLabel('Thinking').selectOption('Off')
+  await page.getByRole('button', { name: 'Save settings' }).click()
+  await ask()
+  expect(bodies[2].reasoning).toEqual({ effort: 'none' })
+  expect(bodies[2].max_tokens).toBe(8192)
+})
+
+test('the assistant dock can be resized and remembers its size', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.goto('./')
+  const dock = page.getByRole('region', { name: 'Music assistant' })
+  const before = (await dock.boundingBox())!
+  const handle = page.getByRole('separator', { name: /Resize assistant/ })
+  const grip = (await handle.boundingBox())!
+  await page.mouse.move(grip.x + 9, grip.y + 9)
+  await page.mouse.down()
+  await page.mouse.move(grip.x - 191, grip.y - 291, { steps: 5 })
+  await page.mouse.up()
+  const after = (await dock.boundingBox())!
+  expect(Math.round(after.width - before.width)).toBe(200)
+  expect(after.y).toBeLessThan(before.y - 200)
+  await page.reload()
+  expect(Math.round((await dock.boundingBox())!.width)).toBe(
+    Math.round(after.width),
+  )
+  await page.getByRole('separator', { name: /Resize assistant/ }).dblclick()
+  expect(Math.round((await dock.boundingBox())!.width)).toBe(
+    Math.round(before.width),
+  )
 })
 
 test('handles provider errors without exposing the API key', async ({

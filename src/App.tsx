@@ -5,6 +5,7 @@ import { useAtom, useAtomValue } from '@effect/atom-react'
 import {
   ArrowDownToLine,
   ArrowUp,
+  Brain,
   Check,
   ChevronDown,
   ChevronUp,
@@ -27,14 +28,16 @@ import {
   ZoomOut,
 } from 'lucide-react'
 import {
+  appendChunk,
   defaults,
+  reasoningEfforts,
   messagesAtom,
   registry,
   settingsAtom,
   sourceAtom,
   storageErrorAtom,
 } from './state'
-import type { Message, Settings } from './state'
+import type { Message, MessagePart, Settings } from './state'
 import { MAX_SOURCE_LENGTH, renderScore } from './renderer'
 import type { RenderResult } from './renderer'
 import {
@@ -120,6 +123,42 @@ function PageOverlay({
   )
 }
 
+/** Model reasoning: tails the latest lines while streaming, folds away once done, expandable in full. */
+function Thinking({ text, live }: { text: string; live: boolean }) {
+  const [expanded, setExpanded] = useState(false)
+  return (
+    <div className="thinking">
+      <button
+        type="button"
+        className="thinking-toggle"
+        aria-expanded={expanded}
+        onClick={() => setExpanded(!expanded)}
+      >
+        <Brain size={12} />
+        {live ? 'Thinking…' : 'Thought process'}
+        {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+      </button>
+      {(expanded || live) && (
+        <div className={`thinking-text ${expanded ? '' : 'tail'}`}>
+          <div>{text}</div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+type DockSize = NonNullable<Settings['dock']>
+
+/** Keeps the dock within the stage, leaving room for its heading and composer. */
+function clampDock(size: DockSize, stage: DOMRect): DockSize {
+  return {
+    width: Math.round(Math.max(300, Math.min(size.width, stage.width - 16))),
+    height: Math.round(
+      Math.max(120, Math.min(size.height, stage.height - 190)),
+    ),
+  }
+}
+
 function SettingsDialog({ close }: { close: () => void }) {
   const [settings, setSettings] = useAtom(settingsAtom)
   const [draft, setDraft] = useState<Settings>(settings)
@@ -195,6 +234,32 @@ function SettingsDialog({ close }: { close: () => void }) {
           </a>{' '}
           that supports tool calling. The default lets OpenRouter choose.
         </p>
+        <label htmlFor="reasoning">Thinking</label>
+        <select
+          id="reasoning"
+          value={draft.reasoning ?? 'default'}
+          onChange={(e) => {
+            const { reasoning: _, ...rest } = draft
+            const effort = reasoningEfforts.find(
+              (level) => level === e.target.value,
+            )
+            setDraft(effort ? { ...rest, reasoning: effort } : rest)
+          }}
+        >
+          <option value="default">Model default</option>
+          <option value="none">Off</option>
+          <option value="minimal">On · minimal effort</option>
+          <option value="low">On · low effort</option>
+          <option value="medium">On · medium effort</option>
+          <option value="high">On · high effort</option>
+          <option value="xhigh">On · extra high effort</option>
+          <option value="max">On · maximum effort</option>
+        </select>
+        <p className="field-help">
+          Lets reasoning models think before answering; their thinking shows in
+          the chat. Higher effort is slower and uses more tokens. Models without
+          reasoning support ignore this, and some only offer a subset of levels.
+        </p>
         <label htmlFor="pages">Sheet music pages</label>
         <select
           id="pages"
@@ -264,7 +329,11 @@ export function App() {
   const [redo, setRedo] = useState<string[]>([])
   const fileInput = useRef<HTMLInputElement>(null)
   const chatInput = useRef<HTMLTextAreaElement>(null)
-  const chatEnd = useRef<HTMLDivElement>(null)
+  const chatLog = useRef<HTMLDivElement>(null)
+  // Follow streaming output only while the reader is at the bottom of the conversation.
+  const followChat = useRef(true)
+  const dockRef = useRef<HTMLElement>(null)
+  const [dockSize, setDockSize] = useState(settings.dock)
   const editorGutter = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const title =
@@ -302,8 +371,9 @@ export function App() {
     }
   }, [source])
   useEffect(() => {
-    chatEnd.current?.scrollIntoView({ block: 'nearest' })
-  }, [messages, busy, agentStatus])
+    const log = chatLog.current
+    if (log && followChat.current) log.scrollTop = log.scrollHeight
+  }, [messages, busy, agentStatus, chatOpen, dockSize])
   useEffect(() => () => abortRef.current?.abort(), [])
 
   function replaceScore(next: string) {
@@ -348,6 +418,53 @@ export function App() {
     ? selectedNotes(rendered.anchors, selected, source)
     : []
 
+  function resizeDock(size: DockSize) {
+    const stage = dockRef.current?.parentElement?.getBoundingClientRect()
+    if (stage) setDockSize(clampDock(size, stage))
+  }
+  function saveDockSize(size: DockSize | undefined) {
+    const { dock: _, ...rest } = registry.get(settingsAtom)
+    setSettings(size ? { ...rest, dock: size } : rest)
+  }
+  // The dock is anchored bottom-right, so dragging its top-left corner up and left grows it.
+  function startDockResize(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0 || !dockRef.current) return
+    event.preventDefault()
+    const handle = event.currentTarget
+    handle.setPointerCapture(event.pointerId)
+    const start = {
+      x: event.clientX,
+      y: event.clientY,
+      width: dockRef.current.getBoundingClientRect().width,
+      height:
+        chatLog.current?.getBoundingClientRect().height ??
+        dockSize?.height ??
+        240,
+    }
+    let size = dockSize
+    const move = (moved: PointerEvent) => {
+      const stage = dockRef.current?.parentElement?.getBoundingClientRect()
+      if (!stage) return
+      size = clampDock(
+        {
+          width: start.width + start.x - moved.clientX,
+          height: start.height + start.y - moved.clientY,
+        },
+        stage,
+      )
+      setDockSize(size)
+    }
+    const end = () => {
+      handle.removeEventListener('pointermove', move)
+      handle.removeEventListener('pointerup', end)
+      handle.removeEventListener('pointercancel', end)
+      saveDockSize(size)
+    }
+    handle.addEventListener('pointermove', move)
+    handle.addEventListener('pointerup', end)
+    handle.addEventListener('pointercancel', end)
+  }
+
   async function send(event?: React.FormEvent) {
     event?.preventDefault()
     if (!input.trim() || busy) return
@@ -369,11 +486,29 @@ export function App() {
     setError('')
     setBusy(true)
     setChatOpen(true)
+    followChat.current = true
     const controller = new AbortController()
     abortRef.current = controller
     const assistantId = crypto.randomUUID()
+    const append = (type: MessagePart['type']) => (chunk: string) =>
+      setMessages((current) =>
+        current.some((message) => message.id === assistantId)
+          ? current.map((message) =>
+              message.id === assistantId
+                ? appendChunk(message, type, chunk)
+                : message,
+            )
+          : [
+              ...current,
+              appendChunk(
+                { id: assistantId, role: 'assistant', text: '' },
+                type,
+                chunk,
+              ),
+            ],
+      )
     try {
-      const { runAgent } = await import('./agent')
+      const { runAgent } = await import('./harness/agent')
       await runAgent({
         settings,
         messages: next,
@@ -381,19 +516,8 @@ export function App() {
         getSource: () => registry.get(sourceAtom),
         updateSource: replaceScore,
         onStatus: setAgentStatus,
-        onText: (text) =>
-          setMessages((current) => {
-            const existing = current.find(
-              (message) => message.id === assistantId,
-            )
-            return existing
-              ? current.map((message) =>
-                  message.id === assistantId
-                    ? { ...message, text: message.text + text }
-                    : message,
-                )
-              : [...current, { id: assistantId, role: 'assistant', text }]
-          }),
+        onText: append('text'),
+        onThinking: append('thinking'),
       })
     } catch (cause) {
       // Provider errors can contain request details; never surface or log the API key.
@@ -579,6 +703,11 @@ export function App() {
         className="stage"
         data-chat={chatOpen ? 'open' : 'closed'}
         aria-label="Music workspace"
+        style={
+          dockSize
+            ? ({ '--dock-width': `${dockSize.width}px` } as React.CSSProperties)
+            : undefined
+        }
       >
         {storageError && (
           <div className="storage-warning" role="alert">
@@ -695,10 +824,59 @@ export function App() {
           </div>
         )}
         <section
+          ref={dockRef}
           className="chat-dock"
           aria-label="Music assistant"
           data-open={chatOpen}
+          data-sized={dockSize ? true : undefined}
+          style={
+            dockSize
+              ? ({
+                  '--chat-height': `${dockSize.height}px`,
+                } as React.CSSProperties)
+              : undefined
+          }
         >
+          {chatOpen && (
+            <div
+              className="dock-resize"
+              role="separator"
+              tabIndex={0}
+              aria-label="Resize assistant (double-click to reset)"
+              title="Drag to resize · double-click to reset"
+              onPointerDown={startDockResize}
+              onDoubleClick={() => {
+                setDockSize(undefined)
+                saveDockSize(undefined)
+              }}
+              onKeyDown={(event) => {
+                const step = event.shiftKey ? 60 : 20
+                const delta = {
+                  ArrowLeft: [step, 0],
+                  ArrowRight: [-step, 0],
+                  ArrowUp: [0, step],
+                  ArrowDown: [0, -step],
+                }[event.key]
+                if (!delta || !dockRef.current) return
+                event.preventDefault()
+                const stage =
+                  dockRef.current.parentElement!.getBoundingClientRect()
+                const size = clampDock(
+                  {
+                    width:
+                      dockRef.current.getBoundingClientRect().width + delta[0],
+                    height:
+                      (chatLog.current?.getBoundingClientRect().height ??
+                        dockSize?.height ??
+                        240) + delta[1],
+                  },
+                  stage,
+                )
+                setDockSize(size)
+                saveDockSize(size)
+              }}
+            />
+          )}
           <div className="chat-heading">
             <button
               type="button"
@@ -734,15 +912,21 @@ export function App() {
               </button>
             )}
           </div>
-          {chatOpen && messages.length > 0 && (
+          {chatOpen && (messages.length > 0 || dockSize) && (
             <div
+              ref={chatLog}
               id="chat-conversation"
               className="chat-messages"
               role="log"
               aria-label="Conversation"
               aria-live="polite"
+              onScroll={(event) => {
+                const log = event.currentTarget
+                followChat.current =
+                  log.scrollHeight - log.scrollTop - log.clientHeight < 40
+              }}
             >
-              {messages.map((message) => (
+              {messages.map((message, messageIndex) => (
                 <div key={message.id} className={`message ${message.role}`}>
                   <span className="message-author">
                     {message.role === 'assistant' ? (
@@ -754,9 +938,27 @@ export function App() {
                   </span>
                   {message.role === 'assistant' ? (
                     <div className="message-body">
-                      <Markdown remarkPlugins={[remarkGfm]}>
-                        {message.text}
-                      </Markdown>
+                      {(
+                        message.parts ?? [
+                          { type: 'text' as const, text: message.text },
+                        ]
+                      ).map((part, index, parts) =>
+                        part.type === 'thinking' ? (
+                          <Thinking
+                            key={index}
+                            text={part.text}
+                            live={
+                              busy &&
+                              messageIndex === messages.length - 1 &&
+                              index === parts.length - 1
+                            }
+                          />
+                        ) : (
+                          <Markdown key={index} remarkPlugins={[remarkGfm]}>
+                            {part.text}
+                          </Markdown>
+                        ),
+                      )}
                     </div>
                   ) : (
                     <div className="message-text">{message.text}</div>
@@ -775,7 +977,6 @@ export function App() {
                   {agentStatus || 'Connecting…'}
                 </div>
               )}
-              <div ref={chatEnd} />
             </div>
           )}
           {error && (

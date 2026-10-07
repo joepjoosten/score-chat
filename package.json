@@ -12,7 +12,8 @@
     "test:e2e": "playwright test",
     "renderer:sync": "node scripts/sync-renderer.mjs",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "docs:sync": "bun scripts/sync-docs.mjs"
   },
   "dependencies": {
     "@effect/ai-openrouter": "4.0.0-rc.112",

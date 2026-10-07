@@ -309,6 +309,41 @@ test('highlighted notes reach the model as source positions and get edited', asy
   )
 })
 
+test('highlighting works even when the score turns point-and-click off', async ({
+  page,
+}) => {
+  await page.goto('./')
+  await configure(page)
+  await page.getByRole('tab', { name: 'LilyPond', exact: true }).click()
+  const editor = page.getByLabel('LilyPond source')
+  await editor.fill(
+    (await editor.inputValue()).replace(
+      '\\version "2.24.4"\n',
+      '\\version "2.24.4"\n\\pointAndClickOff\n',
+    ),
+  )
+  await expect(editor).toHaveValue(/\\pointAndClickOff\n/)
+  await page.getByRole('tab', { name: 'Sheet music' }).click()
+  const image = page.getByRole('img', { name: 'Sheet music, page 1' })
+  await expect(image).toBeVisible()
+  await expect(page.locator('.sheet-page:not(.stale)')).toBeVisible()
+  await page
+    .getByRole('button', { name: 'Highlight notes for the assistant' })
+    .click()
+  const box = (await image.boundingBox())!
+  const at = (x: number, y: number) => ({
+    x: box.x + (x / 119.5015) * box.width,
+    y: box.y + (y / 169.0093) * box.height,
+  })
+  await page.mouse.move(at(20, 19).x, at(20, 19).y)
+  await page.mouse.down()
+  await page.mouse.move(at(45, 25).x, at(45, 25).y, { steps: 6 })
+  await page.mouse.up()
+  await expect(page.locator('.selection-chip')).toContainText(
+    '4 notes, 1 time signature, 1 dynamic highlighted',
+  )
+})
+
 test('pages can be shown as inline SVG for inspection, with active content stripped', async ({
   page,
 }) => {

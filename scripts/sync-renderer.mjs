@@ -59,6 +59,8 @@ await build({
         const render = result.render;
         const graph = result.result?.graph;
         if (!render || !graph) return [];
+        // Always on: the selection tool needs every element's source event, whatever
+        // \\pointAndClickOff or \\pointAndClickTypes the score itself sets.
         const linked = pointAndClickLinker({ setting: true, source, file: 'score.ly' });
         const grobs = new Map(graph.grobs.map((grob) => [grob.id, grob]));
         const systems = new Map();

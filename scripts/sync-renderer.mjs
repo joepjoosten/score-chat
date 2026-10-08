@@ -4,8 +4,13 @@ import { execFileSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import { homedir } from 'node:os'
 
+// `--debug` builds a readable worker with a source map for local inspection.
+// Run the sync again without it before committing.
+const args = process.argv.slice(2)
+const debug = args.includes('--debug')
 const root = resolve(
-  process.argv[2] ?? `${homedir()}/development/github/lilypond-typescript`,
+  args.find((arg) => !arg.startsWith('--')) ??
+    `${homedir()}/development/github/lilypond-typescript`,
 )
 const revision = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], {
   encoding: 'utf8',
@@ -46,8 +51,14 @@ await build({
       import { renderLySourceToSvg } from './src/render/ly-to-svg.ts';
       import { loadRendererData } from './src/data/renderer-data.ts';
       import { pointAndClickLinker } from './src/render/point-and-click.ts';
-      // Start fetching the data immediately; the font manifest needs it too.
-      const ready = loadRendererData(new URL('./data/', import.meta.url))
+      // Data files come from the page, which fetches each one once and hands it
+      // to every worker, so replacing a cancelled worker downloads nothing again.
+      const files = new Map();
+      const readFile = (name) => new Promise((resolve, reject) => {
+        files.set(name, { resolve, reject });
+        self.postMessage({ type: 'data', name });
+      });
+      const ready = loadRendererData(readFile)
         .then(() => withPinnedEmmentalerMetrics(parseSvgFontManifest(font)));
       const SYSTEM_GROUP = /data-system-id="(system-\\d+)" transform="translate\\(([-\\d.e]+) ([-\\d.e]+)\\)"/g;
       // Page-space boxes of every printed element that LilyPond's point-and-click
@@ -98,7 +109,15 @@ await build({
         });
         return anchors;
       };
-      self.onmessage = async ({ data: { id, source } }) => {
+      self.onmessage = async ({ data }) => {
+        if (data.type === 'data') {
+          const file = files.get(data.name);
+          files.delete(data.name);
+          if (data.error) file?.reject(new Error(data.error));
+          else file?.resolve(JSON.parse(data.text));
+          return;
+        }
+        const { id, source } = data;
         try {
           const fontManifest = await ready;
           const result = renderLySourceToSvg(source, { file: 'score.ly', fontManifest });
@@ -119,7 +138,8 @@ await build({
   format: 'esm',
   platform: 'browser',
   target: 'es2022',
-  minify: true,
+  minify: !debug,
+  sourcemap: debug ? 'linked' : false,
   legalComments: 'eof',
   loader: { '.svg': 'text' },
 })
@@ -131,4 +151,5 @@ await writeFile(
     2,
   ) + '\n',
 )
-console.log(`Bundled LilyPond renderer at ${revision}`)
+if (!debug) await rm('public/renderer/worker.js.map', { force: true })
+console.log(`Bundled ${debug ? 'debug ' : ''}LilyPond renderer at ${revision}`)

@@ -748,3 +748,29 @@ test('blocked local storage shows a warning while editing remains usable', async
   await page.getByLabel('LilyPond source').fill('invalid input')
   await expect(page.getByText('Could not render this source')).toBeVisible()
 })
+
+test('renderer data is downloaded once, even when renders are cancelled', async ({
+  page,
+}) => {
+  const downloads = new Map<string, number>()
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname
+    if (path.includes('/renderer/data/'))
+      downloads.set(path, (downloads.get(path) ?? 0) + 1)
+  })
+  await page.goto('./')
+  await expect(page.locator('.sheet-page:not(.stale)')).toBeVisible()
+  await page.getByRole('tab', { name: 'LilyPond', exact: true }).click()
+  const editor = page.getByLabel('LilyPond source')
+  const original = await editor.inputValue()
+  for (const title of ['Second', 'Third', 'Fourth']) {
+    await editor.fill(original.replace('A little beginning', title))
+    // Long enough for the render to start, short enough to cancel it.
+    await page.waitForTimeout(450)
+  }
+  await page.getByRole('tab', { name: 'Sheet music', exact: true }).click()
+  await expect(page.locator('.sheet-page:not(.stale)')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Fourth' })).toBeVisible()
+  expect(downloads.size).toBe(7)
+  expect([...downloads.values()].every((count) => count === 1)).toBe(true)
+})

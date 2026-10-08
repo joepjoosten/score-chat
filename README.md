@@ -53,6 +53,8 @@ npm run build
 npm run test:e2e
 ```
 
+For profiling or debugging locally, `npm run renderer:sync -- --debug` writes an unminified worker with a source map instead; sync again without it before committing.
+
 Commit the updated worker and version metadata together. The sync command requires a clean source checkout and does not change it. It bundles the same `renderLySourceToSvg` and `parseSvgFontManifest` entry points used by that project's browser playground. The bundle is public when the app is deployed.
 
 ## Update the LilyPond documentation

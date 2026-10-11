@@ -8,12 +8,15 @@ import {
   Brain,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ChevronUp,
   Code2,
   FileMusic,
   FileUp,
   Highlighter,
   LoaderCircle,
+  Minus,
   MessageSquare,
   Music2,
   Pause,
@@ -40,7 +43,7 @@ import {
   sourceAtom,
   storageErrorAtom,
 } from './state'
-import type { Message, MessagePart, Settings } from './state'
+import type { DockCorner, Message, MessagePart, Settings } from './state'
 import { MAX_SOURCE_LENGTH, renderScore } from './renderer'
 import type { RenderResult } from './renderer'
 import {
@@ -171,6 +174,27 @@ function Thinking({ text, live }: { text: string; live: boolean }) {
 }
 
 type DockSize = NonNullable<Settings['dock']>
+
+/** Gap between pages shown side by side, in pixels; matches `.page-spread`. */
+const SPREAD_GAP = 24
+
+/** The stage corner nearest to a point, which is where a dragged dock settles. */
+function nearestCorner(x: number, y: number, stage: DOMRect): DockCorner {
+  const vertical = y < stage.top + stage.height / 2 ? 'top' : 'bottom'
+  const horizontal = x < stage.left + stage.width / 2 ? 'left' : 'right'
+  return `${vertical}-${horizontal}`
+}
+
+/**
+ * Screen directions in which dragging the resize grip grows the dock: the grip
+ * sits on the corner facing away from the one the dock is pinned to.
+ */
+function growth(corner: DockCorner) {
+  return {
+    x: corner.endsWith('right') ? -1 : 1,
+    y: corner.startsWith('bottom') ? -1 : 1,
+  }
+}
 
 /** Keeps the dock within the stage, leaving room for its heading and composer. */
 function clampDock(size: DockSize, stage: DOMRect): DockSize {
@@ -357,6 +381,19 @@ export function App() {
   const followChat = useRef(true)
   const dockRef = useRef<HTMLElement>(null)
   const [dockSize, setDockSize] = useState(settings.dock)
+  const corner = settings.corner ?? 'bottom-right'
+  // Where the dock follows the pointer while it is dragged to another corner.
+  const [dockDrag, setDockDrag] = useState<{ x: number; y: number } | null>(
+    null,
+  )
+  const dockDragged = useRef(false)
+  // A hidden assistant keeps working; its handle signals replies that arrive meanwhile.
+  const [chatHidden, setChatHidden] = useState(false)
+  const [unread, setUnread] = useState(false)
+  const canvas = useRef<HTMLDivElement>(null)
+  // The page in view, and how many pages fit side by side.
+  const [page, setPage] = useState(0)
+  const [spread, setSpread] = useState(1)
   const editorGutter = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const title =
@@ -364,6 +401,13 @@ export function App() {
   const fresh =
     source === renderedSource && !rendering && !rendered.errors.length
   const playback = usePlayback(source)
+  const pageCount = rendered.pages.length
+  const firstPage =
+    Math.floor(Math.min(page, Math.max(0, pageCount - 1)) / spread) * spread
+  const shownPages = rendered.pages
+    .map((svg, index) => ({ svg, index }))
+    .slice(firstPage, firstPage + spread)
+  const pageWidth = zoom * 8.6
 
   useEffect(() => {
     const controller = new AbortController()
@@ -399,7 +443,67 @@ export function App() {
     if (log && followChat.current) log.scrollTop = log.scrollHeight
   }, [messages, busy, agentStatus, chatOpen, dockSize])
   useEffect(() => () => abortRef.current?.abort(), [])
-  // Keep the sounding notes in view as playback turns the pages.
+  useEffect(() => {
+    if (chatHidden) setUnread(true)
+  }, [messages, error])
+  // Show two pages side by side whenever both fit at the current zoom.
+  useEffect(() => {
+    const element = canvas.current
+    if (!element) return
+    const measure = () => {
+      const style = getComputedStyle(element)
+      const room =
+        element.clientWidth -
+        parseFloat(style.paddingLeft) -
+        parseFloat(style.paddingRight)
+      setSpread(room >= pageWidth * 2 + SPREAD_GAP ? 2 : 1)
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [pageWidth, settings.view])
+  useEffect(() => {
+    canvas.current?.scrollTo({ top: 0 })
+  }, [firstPage])
+  // Arrow and page keys turn the pages, unless the reader is typing.
+  useEffect(() => {
+    if (settings.view !== 'score') return
+    const turn = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement
+      if (
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        target.closest('input, textarea, select, dialog, [role="separator"]')
+      )
+        return
+      const step = {
+        ArrowLeft: -1,
+        PageUp: -1,
+        ArrowRight: 1,
+        PageDown: 1,
+      }[event.key]
+      if (!step) return
+      event.preventDefault()
+      turnPage(step)
+    }
+    window.addEventListener('keydown', turn)
+    return () => window.removeEventListener('keydown', turn)
+  })
+  // Turn to the page that is playing.
+  useEffect(() => {
+    const anchor = rendered.anchors.find(
+      (anchor) =>
+        anchor.kind === 'NoteHead' && playback.sounding.has(anchorKey(anchor)),
+    )
+    if (
+      anchor &&
+      (anchor.page < firstPage || anchor.page >= firstPage + spread)
+    )
+      setPage(anchor.page)
+  }, [playback.sounding])
+  // Keep the sounding notes in view as playback moves down the page.
   useEffect(() => {
     const note = document.querySelector('.page-overlay .sounding')
     const canvas = note?.closest('.score-canvas')
@@ -408,7 +512,12 @@ export function App() {
     const view = canvas.getBoundingClientRect()
     if (box.top < view.top + 40 || box.bottom > view.bottom - 40)
       note.scrollIntoView({ block: 'center', behavior: 'smooth' })
-  }, [playback.sounding])
+  }, [playback.sounding, firstPage])
+
+  function turnPage(step: number) {
+    const next = firstPage + step * spread
+    if (next >= 0 && next < pageCount) setPage(next)
+  }
 
   function replaceScore(next: string) {
     const current = registry.get(sourceAtom)
@@ -460,7 +569,7 @@ export function App() {
     const { dock: _, ...rest } = registry.get(settingsAtom)
     setSettings(size ? { ...rest, dock: size } : rest)
   }
-  // The dock is anchored bottom-right, so dragging its top-left corner up and left grows it.
+  // The grip faces away from the dock's corner, so dragging it outwards grows the dock.
   function startDockResize(event: React.PointerEvent<HTMLDivElement>) {
     if (event.button !== 0 || !dockRef.current) return
     event.preventDefault()
@@ -476,13 +585,14 @@ export function App() {
         240,
     }
     let size = dockSize
+    const grow = growth(corner)
     const move = (moved: PointerEvent) => {
       const stage = dockRef.current?.parentElement?.getBoundingClientRect()
       if (!stage) return
       size = clampDock(
         {
-          width: start.width + start.x - moved.clientX,
-          height: start.height + start.y - moved.clientY,
+          width: start.width + grow.x * (moved.clientX - start.x),
+          height: start.height + grow.y * (moved.clientY - start.y),
         },
         stage,
       )
@@ -497,6 +607,39 @@ export function App() {
     handle.addEventListener('pointermove', move)
     handle.addEventListener('pointerup', end)
     handle.addEventListener('pointercancel', end)
+  }
+
+  /**
+   * Drags the dock by its heading; on release it settles in the corner nearest
+   * the pointer. A press without movement stays a click on the heading.
+   */
+  function startDockDrag(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0 || !dockRef.current) return
+    if ((event.target as HTMLElement).closest('.icon-button')) return
+    const start = { x: event.clientX, y: event.clientY }
+    dockDragged.current = false
+    // The dock trails the pointer, so follow it on the window rather than the heading.
+    const move = (moved: PointerEvent) => {
+      const offset = { x: moved.clientX - start.x, y: moved.clientY - start.y }
+      if (!dockDragged.current && Math.hypot(offset.x, offset.y) < 6) return
+      dockDragged.current = true
+      setDockDrag(offset)
+    }
+    const end = (ended: PointerEvent) => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', end)
+      window.removeEventListener('pointercancel', end)
+      setDockDrag(null)
+      // Clear the flag once the click that ends the drag has been ignored.
+      setTimeout(() => (dockDragged.current = false))
+      const stage = dockRef.current?.parentElement?.getBoundingClientRect()
+      if (!dockDragged.current || !stage) return
+      const next = nearestCorner(ended.clientX, ended.clientY, stage)
+      setSettings({ ...registry.get(settingsAtom), corner: next })
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', end)
+    window.addEventListener('pointercancel', end)
   }
 
   async function send(event?: React.FormEvent) {
@@ -687,6 +830,33 @@ export function App() {
             </button>
           )}
           {settings.view === 'score' && (
+            <div className="page-controls">
+              <button
+                className="icon-button"
+                title="Previous page"
+                aria-label="Previous page"
+                disabled={firstPage === 0}
+                onClick={() => turnPage(-1)}
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <span className="page-label" aria-live="polite">
+                {pageCount
+                  ? `${firstPage + 1}${shownPages.length > 1 ? `–${firstPage + shownPages.length}` : ''} / ${pageCount}`
+                  : '–'}
+              </span>
+              <button
+                className="icon-button"
+                title="Next page"
+                aria-label="Next page"
+                disabled={firstPage + spread >= pageCount}
+                onClick={() => turnPage(1)}
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          )}
+          {settings.view === 'score' && (
             <div className="zoom-controls">
               <button
                 className="icon-button"
@@ -764,7 +934,8 @@ export function App() {
       />
       <main
         className="stage"
-        data-chat={chatOpen ? 'open' : 'closed'}
+        data-chat={chatHidden ? 'hidden' : chatOpen ? 'open' : 'closed'}
+        data-corner={corner}
         aria-label="Music workspace"
         style={
           dockSize
@@ -823,6 +994,7 @@ export function App() {
             id="score-panel"
             role="tabpanel"
             aria-labelledby="score-tab"
+            ref={canvas}
             className="score-canvas"
             aria-busy={rendering}
           >
@@ -832,47 +1004,47 @@ export function App() {
                 <p>Engraving your music…</p>
               </div>
             )}
-            {rendered.pages.map((page, index) => (
-              <div
-                key={index}
-                className={`sheet-page ${fresh ? '' : 'stale'}`}
-                style={{
-                  width: `min(${zoom * 8.6}px, ${(zoom / 85) * 100}%)`,
-                }}
-              >
-                {settings.pages === 'inline' ? (
+            {shownPages.length > 0 && (
+              <div className="page-spread">
+                {shownPages.map(({ svg: page, index }) => (
                   <div
-                    className="sheet-svg"
-                    role="img"
-                    aria-label={`Sheet music, page ${index + 1}`}
-                    dangerouslySetInnerHTML={{ __html: inlinePages[index] }}
-                  />
-                ) : (
-                  <img
-                    alt={`Sheet music, page ${index + 1}`}
-                    src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(page)}`}
-                  />
-                )}
-                <PageOverlay
-                  page={index}
-                  viewBox={page.match(/viewBox="([^"]+)"/)?.[1] ?? '0 0 1 1'}
-                  anchors={rendered.anchors}
-                  selected={selected}
-                  sounding={playback.sounding}
-                  active={highlighting && fresh}
-                  onSelect={toggleSelection}
-                />
-                <button
-                  className="page-download"
-                  disabled={!fresh}
-                  onClick={() =>
-                    download(`score-${index + 1}.svg`, page, 'image/svg+xml')
-                  }
-                >
-                  <ArrowDownToLine size={14} /> SVG · page {index + 1}
-                </button>
+                    key={index}
+                    className={`sheet-page ${fresh ? '' : 'stale'}`}
+                    style={{
+                      width:
+                        spread > 1
+                          ? `${pageWidth}px`
+                          : `min(${pageWidth}px, ${(zoom / 85) * 100}%)`,
+                    }}
+                  >
+                    {settings.pages === 'inline' ? (
+                      <div
+                        className="sheet-svg"
+                        role="img"
+                        aria-label={`Sheet music, page ${index + 1}`}
+                        dangerouslySetInnerHTML={{ __html: inlinePages[index] }}
+                      />
+                    ) : (
+                      <img
+                        alt={`Sheet music, page ${index + 1}`}
+                        src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(page)}`}
+                      />
+                    )}
+                    <PageOverlay
+                      page={index}
+                      viewBox={
+                        page.match(/viewBox="([^"]+)"/)?.[1] ?? '0 0 1 1'
+                      }
+                      anchors={rendered.anchors}
+                      selected={selected}
+                      sounding={playback.sounding}
+                      active={highlighting && fresh}
+                      onSelect={toggleSelection}
+                    />
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
             {!rendering && !rendered.pages.length && (
               <div className="empty-score">
                 <FileMusic size={32} />
@@ -892,13 +1064,17 @@ export function App() {
           className="chat-dock"
           aria-label="Music assistant"
           data-open={chatOpen}
+          data-corner={corner}
           data-sized={dockSize ? true : undefined}
+          data-dragging={dockDrag ? true : undefined}
+          hidden={chatHidden}
           style={
-            dockSize
-              ? ({
-                  '--chat-height': `${dockSize.height}px`,
-                } as React.CSSProperties)
-              : undefined
+            {
+              ...(dockSize && { '--chat-height': `${dockSize.height}px` }),
+              ...(dockDrag && {
+                transform: `translate(${dockDrag.x}px, ${dockDrag.y}px)`,
+              }),
+            } as React.CSSProperties
           }
         >
           {chatOpen && (
@@ -916,23 +1092,26 @@ export function App() {
               onKeyDown={(event) => {
                 const step = event.shiftKey ? 60 : 20
                 const delta = {
-                  ArrowLeft: [step, 0],
-                  ArrowRight: [-step, 0],
-                  ArrowUp: [0, step],
-                  ArrowDown: [0, -step],
+                  ArrowLeft: [-step, 0],
+                  ArrowRight: [step, 0],
+                  ArrowUp: [0, -step],
+                  ArrowDown: [0, step],
                 }[event.key]
                 if (!delta || !dockRef.current) return
                 event.preventDefault()
+                const grow = growth(corner)
                 const stage =
                   dockRef.current.parentElement!.getBoundingClientRect()
                 const size = clampDock(
                   {
                     width:
-                      dockRef.current.getBoundingClientRect().width + delta[0],
+                      dockRef.current.getBoundingClientRect().width +
+                      grow.x * delta[0],
                     height:
                       (chatLog.current?.getBoundingClientRect().height ??
                         dockSize?.height ??
-                        240) + delta[1],
+                        240) +
+                      grow.y * delta[1],
                   },
                   stage,
                 )
@@ -941,13 +1120,20 @@ export function App() {
               }}
             />
           )}
-          <div className="chat-heading">
+          <div
+            className="chat-heading"
+            title="Drag to move the assistant to another corner"
+            onPointerDown={startDockDrag}
+          >
             <button
               type="button"
               className="chat-toggle"
               aria-expanded={chatOpen}
               aria-controls="chat-conversation"
-              onClick={() => setChatOpen(!chatOpen)}
+              onClick={() => {
+                // The click that ends a drag is not a toggle.
+                if (!dockDragged.current) setChatOpen(!chatOpen)
+              }}
             >
               <span className="assistant-icon">
                 <Sparkles size={14} />
@@ -975,6 +1161,17 @@ export function App() {
                 <Trash2 size={15} />
               </button>
             )}
+            <button
+              className="icon-button"
+              title="Hide assistant (it keeps working)"
+              aria-label="Hide assistant"
+              onClick={() => {
+                setUnread(false)
+                setChatHidden(true)
+              }}
+            >
+              <Minus size={15} />
+            </button>
           </div>
           {chatOpen && (messages.length > 0 || dockSize) && (
             <div
@@ -1131,6 +1328,31 @@ export function App() {
             </div>
           </form>
         </section>
+        {chatHidden && (
+          <button
+            className="chat-handle"
+            data-corner={corner}
+            title="Show assistant"
+            aria-label={
+              busy
+                ? 'Show assistant (working)'
+                : unread
+                  ? 'Show assistant (new messages)'
+                  : 'Show assistant'
+            }
+            onClick={() => {
+              setChatHidden(false)
+              setUnread(false)
+            }}
+          >
+            {busy ? (
+              <LoaderCircle size={15} className="spin" />
+            ) : (
+              <Sparkles size={15} />
+            )}
+            {unread && !busy && <span className="unread-dot" />}
+          </button>
+        )}
       </main>
       {settingsOpen && <SettingsDialog close={() => setSettingsOpen(false)} />}
     </div>

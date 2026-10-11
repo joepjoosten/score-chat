@@ -819,3 +819,57 @@ test('playback lights up the sounding note heads, pauses, and rewinds', async ({
     page.getByRole('button', { name: 'Play', exact: true }),
   ).toBeVisible()
 })
+
+test('shows one page at a time, two when they fit, and turns pages', async ({
+  page,
+}) => {
+  await page.addInitScript((key) => localStorage.removeItem(key), SCORE_KEY)
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.goto('./')
+  const label = page.locator('.page-label')
+  await expect(label).toHaveText('1 / 6')
+  await expect(page.locator('.sheet-page')).toHaveCount(1)
+  await expect(
+    page.getByRole('button', { name: 'Previous page' }),
+  ).toBeDisabled()
+  await page.getByRole('button', { name: 'Next page' }).click()
+  await expect(label).toHaveText('2 / 6')
+  await page.keyboard.press('ArrowRight')
+  await expect(label).toHaveText('3 / 6')
+  await page.setViewportSize({ width: 2200, height: 900 })
+  await expect(page.locator('.sheet-page')).toHaveCount(2)
+  await expect(label).toHaveText('3–4 / 6')
+  await page.getByRole('button', { name: 'Next page' }).click()
+  await expect(label).toHaveText('5–6 / 6')
+  await expect(page.getByRole('button', { name: 'Next page' })).toBeDisabled()
+})
+
+test('the assistant can move to another corner and hide while it works', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.goto('./')
+  const dock = page.getByRole('region', { name: 'Music assistant' })
+  const heading = (await page.locator('.chat-heading').boundingBox())!
+  await page.mouse.move(heading.x + 60, heading.y + 10)
+  await page.mouse.down()
+  await page.mouse.move(150, 120, { steps: 6 })
+  await page.mouse.up()
+  // Dragging is not a click: the dock stays as it was.
+  await expect(page.locator('.chat-toggle')).toHaveAttribute(
+    'aria-expanded',
+    'true',
+  )
+  const moved = (await dock.boundingBox())!
+  expect(moved.x).toBeLessThan(40)
+  expect(moved.y).toBeLessThan(120)
+  await page.reload()
+  expect((await dock.boundingBox())!.x).toBeLessThan(40)
+
+  await page.getByRole('button', { name: 'Hide assistant' }).click()
+  await expect(dock).toBeHidden()
+  const handle = page.getByRole('button', { name: /^Show assistant/ })
+  expect((await handle.boundingBox())!.x).toBeLessThan(40)
+  await handle.click()
+  await expect(dock).toBeVisible()
+})

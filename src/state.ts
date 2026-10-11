@@ -11,6 +11,13 @@ export const reasoningEfforts = [
   'xhigh',
   'max',
 ] as const
+export const dockCorners = [
+  'top-left',
+  'top-right',
+  'bottom-left',
+  'bottom-right',
+] as const
+export type DockCorner = (typeof dockCorners)[number]
 export const Settings = Schema.Struct({
   apiKey: Schema.String,
   model: Schema.String,
@@ -23,6 +30,8 @@ export const Settings = Schema.Struct({
   dock: Schema.optionalKey(
     Schema.Struct({ width: Schema.Number, height: Schema.Number }),
   ),
+  /** Corner of the stage the assistant dock is pinned to; bottom right when absent. */
+  corner: Schema.optionalKey(Schema.Literals(dockCorners)),
 })
 export type Settings = typeof Settings.Type
 export const defaults: Settings = {

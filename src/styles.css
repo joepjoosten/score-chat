@@ -194,9 +194,17 @@ svg {
   margin: 0 8px;
   flex-shrink: 0;
 }
-.zoom-controls {
+.zoom-controls,
+.page-controls {
   display: flex;
   align-items: center;
+}
+.page-label {
+  font-size: 11px;
+  min-width: 46px;
+  text-align: center;
+  color: #858d7d;
+  font-variant-numeric: tabular-nums;
 }
 .zoom-label {
   font-size: 11px;
@@ -232,13 +240,21 @@ svg {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 28px 28px calc(var(--dock-gap) + 150px);
+  /* The assistant floats over the score and takes no room from it. */
+  padding: 28px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 24px;
   background-image: radial-gradient(#c6ccba80 0.65px, transparent 0.65px);
   background-size: 9px 9px;
+}
+/* The pages in view: one, or two side by side when both fit. */
+.page-spread {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 24px;
+  width: 100%;
 }
 .sheet-page {
   position: relative;
@@ -328,17 +344,6 @@ svg {
   width: fit-content;
   max-width: 100%;
 }
-.page-download {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
-  border: 1px solid #e1e4d9;
-  border-radius: 4px;
-  font-size: 10px;
-  padding: 5px;
-  background: #fffffff0;
-  color: #828c75;
-}
 .empty-score {
   margin: auto;
   text-align: center;
@@ -418,7 +423,67 @@ svg {
   box-shadow:
     0 12px 40px #26301c1f,
     0 2px 6px #26301c12;
-  z-index: 2;
+  /* Always above the score and its banners. */
+  z-index: 10;
+}
+.chat-dock[hidden] {
+  display: none;
+}
+.chat-dock[data-corner^='top'] {
+  top: var(--dock-gap);
+  bottom: auto;
+}
+.chat-dock[data-corner$='left'] {
+  left: var(--dock-gap);
+  right: auto;
+}
+.chat-dock[data-dragging] {
+  opacity: 0.85;
+  box-shadow: 0 18px 50px #26301c33;
+  cursor: grabbing;
+}
+.chat-heading {
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+.chat-dock[data-dragging] .chat-heading {
+  cursor: grabbing;
+}
+/* The hidden assistant's handle, in the dock's corner. */
+.chat-handle {
+  position: absolute;
+  right: var(--dock-gap);
+  bottom: var(--dock-gap);
+  z-index: 10;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid #d5dbc9;
+  background: #fdfef9f2;
+  color: #667e4e;
+  box-shadow: 0 6px 20px #26301c24;
+}
+.chat-handle:hover {
+  background: #eef0e6;
+}
+.chat-handle[data-corner^='top'] {
+  top: var(--dock-gap);
+  bottom: auto;
+}
+.chat-handle[data-corner$='left'] {
+  left: var(--dock-gap);
+  right: auto;
+}
+.unread-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #3f9b4a;
+  box-shadow: 0 0 0 2px #fdfef9;
 }
 .chat-heading {
   display: flex;
@@ -497,6 +562,26 @@ svg {
   touch-action: none;
   border-radius: 14px 0 0 0;
   z-index: 1;
+}
+/* The grip sits on the corner facing away from the dock's corner. */
+.chat-dock[data-corner$='left'] .dock-resize {
+  left: auto;
+  right: -5px;
+}
+.chat-dock[data-corner^='top'] .dock-resize {
+  top: auto;
+  bottom: -5px;
+}
+.chat-dock[data-corner='bottom-left'] .dock-resize {
+  transform: scaleX(-1);
+  cursor: nesw-resize;
+}
+.chat-dock[data-corner='top-right'] .dock-resize {
+  transform: scaleY(-1);
+  cursor: nesw-resize;
+}
+.chat-dock[data-corner='top-left'] .dock-resize {
+  transform: scale(-1);
 }
 .dock-resize::before {
   content: '';
@@ -846,12 +931,6 @@ dialog select:focus {
   }
 }
 
-/* Wide screens: keep the score clear of the open chat dock. */
-@media (min-width: 1200px) {
-  .stage[data-chat='open'] .score-canvas {
-    padding-right: calc(var(--dock-width) + var(--dock-gap) * 2);
-  }
-}
 @media (max-width: 900px) {
   .tabs button span {
     display: none;
@@ -896,7 +975,7 @@ dialog select:focus {
     height: 28px;
   }
   .score-canvas {
-    padding: 14px 14px calc(var(--dock-gap) + 130px);
+    padding: 14px;
     align-items: flex-start;
   }
   .sheet-page {

@@ -16,6 +16,7 @@ Open **Settings**, enter an OpenRouter API key and a model ID with tool-calling 
 - Switch between **Sheet music** and **LilyPond**; edits render automatically. The score fills the window below a single toolbar.
 - The sheet music shows one page at a time, or two side by side when both fit at the current zoom. Turn pages with the arrows in the toolbar or the arrow and Page Up/Down keys; playback turns them along with the music.
 - The assistant lives in a floating panel that always stays above the score. Click its header (or press Escape in the composer) to collapse it to just the message box; sending a message reopens it. Drag the header to move the panel to another corner (remembered). **Hide** tucks it away behind a small handle while it keeps working; the handle spins while the assistant works and shows a dot when there is something new.
+- The **LilyPond** tab is a CodeMirror editor with LilyPond highlighting (commands, notes and durations, strings, comments, Scheme). Typing `\` suggests the commands Score Chat's renderer supports, each with the documentation section that describes it, along with the variables defined in the score; after `\new`, `\context` or `\clef` it suggests the supported context and clef names. Commands the renderer does not support are underlined. Standard shortcuts apply, including undo, find (Cmd/Ctrl+F) and Tab to indent.
 - Open a `.ly` file or download the current source.
 - Ask the assistant to explain or edit music. Its Effect AI tools search, read (by line range), validate, and edit the score in the browser; targeted changes are sent as exact text replacements instead of a full rewrite, and the score is no longer embedded in the prompt. Invalid edits are rejected and returned to the model as diagnostics. The assistant keeps working until it is done; **Stop** ends the turn immediately.
 - The assistant can look things up in the bundled LilyPond 2.24.4 documentation (Notation Reference, snippets and Music Glossary) with full-text search. Every example in it is marked by whether Score Chat's renderer supports it.
@@ -41,7 +42,8 @@ The agent loop runs locally, but **model inference happens through OpenRouter**,
 - `src/player.ts`: playback; schedules the worker's MIDI notes on Web Audio and tracks which source events are sounding.
 - `src/midi.ts`: adds `\midi { }` to scores written for print only, without moving earlier source positions.
 - `src/selection.ts`: maps marker swipes over the rendered page to notes in the source and describes them to the model.
-- `src/App.tsx`: editor, SVG preview, settings, and conversation.
+- `src/SourceEditor.tsx` and `src/lilypondLanguage.ts`: the CodeMirror source editor, loaded with the LilyPond tab, and its highlighter and completions. `src/sourceErrors.ts` finds the commands that render errors name.
+- `src/App.tsx`: SVG preview, toolbar, settings, and conversation.
 
 ## Update the LilyPond renderer
 
@@ -71,7 +73,7 @@ npm run docs:sync
 npm run docs:sync -- /path/to/lilypond-typescript
 ```
 
-Rerun it after renderer updates so the support markers stay accurate, and commit `public/docs/`. The LilyPond documentation is licensed under the GNU Free Documentation License (included as `public/docs/COPYING.FDL`); the snippets are in the public domain. `public/llms.txt` is a separate hand-made index of the 2.26 manuals on lilypond.org and is not used by the agent.
+It also writes `public/docs/lilypond-commands.json`, the editor's completions: the documented commands, contexts and clefs the renderer supports, judged by whether a rendering example uses them or they render cleanly in a few small probes (`bun scripts/sync-commands.mjs` regenerates just that file). Rerun it after renderer updates so the support markers stay accurate, and commit `public/docs/`. The LilyPond documentation is licensed under the GNU Free Documentation License (included as `public/docs/COPYING.FDL`); the snippets are in the public domain. `public/llms.txt` is a separate hand-made index of the 2.26 manuals on lilypond.org and is not used by the agent.
 
 ## Checks
 

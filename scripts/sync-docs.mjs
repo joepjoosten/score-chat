@@ -547,3 +547,5 @@ const examples = documents.reduce(
 console.log(
   `Wrote ${documents.length} documents (${notation.length} notation, ${glossary.length} glossary, ${snippets.size} snippets); ${examples[0]} of ${examples[1]} examples render.`,
 )
+// The editor's completions are derived from the documents just written.
+await import('./sync-commands.mjs')

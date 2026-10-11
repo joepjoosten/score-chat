@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { transformSync } from 'esbuild'
 import { readFileSync } from 'node:fs'
 
@@ -9,6 +9,13 @@ const simpleScore = readFileSync(
   'utf8',
 )
 const SCORE_KEY = 'score-chat.score.v1'
+// The CodeMirror document behind the LilyPond source editor.
+const sourceOf = (editor: Locator) =>
+  editor.evaluate((content) =>
+    [...content.querySelectorAll('.cm-line')]
+      .map((line) => line.textContent)
+      .join('\n'),
+  )
 // The six-page default score takes far longer to render on CI runners.
 const COMPENDIUM_RENDER = 60_000
 test.beforeEach(async ({ page }) => {
@@ -82,7 +89,7 @@ test('renders locally, switches views, persists edits and preferences, and downl
   await page.getByRole('tab', { name: 'LilyPond', exact: true }).click()
   const editor = page.getByLabel('LilyPond source')
   await editor.fill(
-    (await editor.inputValue()).replace('A little beginning', 'My first score'),
+    (await sourceOf(editor)).replace('A little beginning', 'My first score'),
   )
   await page.reload()
   await expect(editor).toContainText('My first score')
@@ -139,7 +146,7 @@ test('agent executes a validated score edit through Effect AI and preserves tool
   await configure(page)
   await page.getByRole('tab', { name: 'LilyPond', exact: true }).click()
   const editor = page.getByLabel('LilyPond source')
-  const original = await editor.inputValue()
+  const original = await sourceOf(editor)
   const changed = original.replace('A little beginning', 'A playful beginning')
   let calls = 0
   await page.route(
@@ -207,19 +214,19 @@ test('agent executes a validated score edit through Effect AI and preserves tool
     'A playful beginning',
   ])
   await expect(reply).not.toContainText('**')
-  await expect(editor).toHaveValue(changed)
+  await expect.poll(() => sourceOf(editor)).toEqual(changed)
   expect(calls).toBe(2)
   await page
     .getByRole('button', { name: 'Undo last score replacement' })
     .click()
-  await expect(editor).toHaveValue(original)
+  await expect.poll(() => sourceOf(editor)).toEqual(original)
   const redo = page.getByRole('button', { name: 'Redo score replacement' })
   await redo.click()
-  await expect(editor).toHaveValue(changed)
+  await expect.poll(() => sourceOf(editor)).toEqual(changed)
   await page
     .getByRole('button', { name: 'Undo last score replacement' })
     .click()
-  await expect(editor).toHaveValue(original)
+  await expect.poll(() => sourceOf(editor)).toEqual(original)
   // Editing by hand after an undo discards the redo branch.
   await editor.fill(original + '% edited\n')
   await expect(redo).toBeDisabled()
@@ -329,7 +336,7 @@ test('highlighted notes reach the model as source positions and get edited', asy
   // The edit invalidates the highlight; the chip is gone and the score changed.
   await expect(chip).toHaveCount(0)
   await page.getByRole('tab', { name: 'LilyPond', exact: true }).click()
-  const edited = await page.getByLabel('LilyPond source').inputValue()
+  const edited = await sourceOf(page.getByLabel('LilyPond source'))
   expect(edited).toContain('    c4\\p e-. g-. e-. | f4 a g2 |\n')
   expect(edited).not.toContain('c4\\p e g e |')
 })
@@ -342,12 +349,12 @@ test('highlighting works even when the score turns point-and-click off', async (
   await page.getByRole('tab', { name: 'LilyPond', exact: true }).click()
   const editor = page.getByLabel('LilyPond source')
   await editor.fill(
-    (await editor.inputValue()).replace(
+    (await sourceOf(editor)).replace(
       '\\version "2.24.4"\n',
       '\\version "2.24.4"\n\\pointAndClickOff\n',
     ),
   )
-  await expect(editor).toHaveValue(/\\pointAndClickOff\n/)
+  await expect.poll(() => sourceOf(editor)).toMatch(/\\pointAndClickOff\n/)
   await page.getByRole('tab', { name: 'Sheet music' }).click()
   const image = page.getByRole('img', { name: 'Sheet music, page 1' })
   await expect(image).toBeVisible()
@@ -439,7 +446,7 @@ test('agent searches, edits with exact replacements, and shows its thinking', as
   await configure(page)
   await page.getByRole('tab', { name: 'LilyPond', exact: true }).click()
   const editor = page.getByLabel('LilyPond source')
-  const original = await editor.inputValue()
+  const original = await sourceOf(editor)
   const thoughts = Array.from(
     { length: 14 },
     (_, index) => `thought ${index + 1}`,
@@ -500,7 +507,9 @@ test('agent searches, edits with exact replacements, and shows its thinking', as
   )
   release()
   await expect(page.getByText('Now it is Allegro.')).toBeVisible()
-  await expect(editor).toHaveValue(original.replace('"Andante"', '"Allegro"'))
+  await expect
+    .poll(() => sourceOf(editor))
+    .toEqual(original.replace('"Andante"', '"Allegro"'))
   const searched = bodies[1].messages.find(
     (message) => message.role === 'tool',
   )!.content as string
@@ -667,7 +676,7 @@ test('invalid agent edits return diagnostics and leave the score unchanged', asy
   await page.goto('./')
   await configure(page)
   await page.getByRole('tab', { name: 'LilyPond', exact: true }).click()
-  const original = await page.getByLabel('LilyPond source').inputValue()
+  const original = await sourceOf(page.getByLabel('LilyPond source'))
   let calls = 0
   await page.route(
     'https://openrouter.ai/api/v1/chat/completions',
@@ -711,7 +720,9 @@ test('invalid agent edits return diagnostics and leave the score unchanged', asy
   await expect(
     page.getByText('That notation is unsupported; your score is unchanged.'),
   ).toBeVisible()
-  await expect(page.getByLabel('LilyPond source')).toHaveValue(original)
+  await expect
+    .poll(() => sourceOf(page.getByLabel('LilyPond source')))
+    .toEqual(original)
   await expect(
     page.getByRole('button', { name: 'Undo last score replacement' }),
   ).toBeDisabled()
@@ -783,7 +794,7 @@ test('renderer data is downloaded once, even when renders are cancelled', async 
   await expect(page.locator('.sheet-page:not(.stale)')).toBeVisible()
   await page.getByRole('tab', { name: 'LilyPond', exact: true }).click()
   const editor = page.getByLabel('LilyPond source')
-  const original = await editor.inputValue()
+  const original = await sourceOf(editor)
   for (const title of ['Second', 'Third', 'Fourth']) {
     await editor.fill(original.replace('A little beginning', title))
     // Long enough for the render to start, short enough to cancel it.
@@ -804,9 +815,9 @@ test('a fresh visit opens the alto saxophone compendium', async ({ page }) => {
     timeout: COMPENDIUM_RENDER,
   })
   await page.getByRole('tab', { name: 'LilyPond', exact: true }).click()
-  await expect(page.getByLabel('LilyPond source')).toHaveValue(
-    /title = "The Complete Alto Saxophone"/,
-  )
+  await expect
+    .poll(() => sourceOf(page.getByLabel('LilyPond source')))
+    .toMatch(/title = "The Complete Alto Saxophone"/)
 })
 
 test('playback lights up the sounding note heads, pauses, and rewinds', async ({
@@ -879,4 +890,34 @@ test('the assistant can move to another corner and hide while it works', async (
   expect((await handle.boundingBox())!.x).toBeLessThan(40)
   await handle.click()
   await expect(dock).toBeVisible()
+})
+
+test('the source editor completes commands and marks unsupported ones', async ({
+  page,
+}) => {
+  await page.goto('./')
+  await page.getByRole('tab', { name: 'LilyPond', exact: true }).click()
+  const editor = page.getByLabel('LilyPond source')
+  await editor.fill(
+    (await sourceOf(editor)).replace(
+      '\\version "2.24.4"\n',
+      '\\version "2.24.4"\n\\bogusThing\n',
+    ),
+  )
+  await expect(page.locator('.cm-lintRange-error')).toHaveText('\\bogusThing')
+  await page.locator('.cm-line').first().click()
+  await page.keyboard.press('End')
+  await page.keyboard.press('Enter')
+  // Only what the renderer supports is suggested.
+  await page.keyboard.type('\\whiteou')
+  await expect(page.locator('.cm-tooltip-autocomplete')).toHaveCount(0)
+  for (let i = 0; i < 8; i++) await page.keyboard.press('Backspace')
+  await page.keyboard.type('\\tupl')
+  await expect(page.locator('.cm-completionLabel').first()).toHaveText(
+    '\\tuplet',
+  )
+  await page.keyboard.press('Enter')
+  await expect
+    .poll(() => sourceOf(editor))
+    .toMatch(/^\\version "2.24.4"\n\\tuplet\n/)
 })

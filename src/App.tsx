@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useAtom, useAtomValue } from '@effect/atom-react'
@@ -57,6 +57,10 @@ import {
 import type { Anchor, Box } from './selection'
 import { sanitizeSvg } from './svg'
 import { usePlayback } from './player'
+
+// CodeMirror loads with the LilyPond tab, keeping it out of the main bundle.
+const SourceEditor = lazy(() => import('./SourceEditor'))
+const NO_ERRORS: string[] = []
 
 function download(name: string, content: string, type: string) {
   const url = URL.createObjectURL(new Blob([content], { type }))
@@ -394,7 +398,6 @@ export function App() {
   // The page in view, and how many pages fit side by side.
   const [page, setPage] = useState(0)
   const [spread, setSpread] = useState(1)
-  const editorGutter = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const title =
     source.match(/\btitle\s*=\s*"([^"\n]*)"/)?.[1] || 'Untitled score'
@@ -962,32 +965,21 @@ export function App() {
             aria-labelledby="source-tab"
             className="source-panel"
           >
-            <div
-              ref={editorGutter}
-              className="editor-gutter"
-              aria-hidden="true"
+            <Suspense
+              fallback={<div className="source-loading">Loading editor…</div>}
             >
-              {source.split('\n').map((_, index) => (
-                <div key={index}>{index + 1}</div>
-              ))}
-            </div>
-            <textarea
-              aria-label="LilyPond source"
-              className="source-editor"
-              onScroll={(event) => {
-                if (editorGutter.current)
-                  editorGutter.current.scrollTop = event.currentTarget.scrollTop
-              }}
-              spellCheck={false}
-              value={source}
-              readOnly={busy}
-              maxLength={MAX_SOURCE_LENGTH}
-              onChange={(e) => {
-                // Typing after an undo starts a new branch; the undone replacement is no longer redoable.
-                if (redo.length) setRedo([])
-                setSource(e.target.value)
-              }}
-            />
+              <SourceEditor
+                value={source}
+                readOnly={busy}
+                errors={rendering ? NO_ERRORS : rendered.errors}
+                maxLength={MAX_SOURCE_LENGTH}
+                onChange={(next) => {
+                  // Typing after an undo starts a new branch; the undone replacement is no longer redoable.
+                  if (redo.length) setRedo([])
+                  setSource(next)
+                }}
+              />
+            </Suspense>
           </div>
         ) : (
           <div

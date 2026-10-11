@@ -9,6 +9,8 @@ const simpleScore = readFileSync(
   'utf8',
 )
 const SCORE_KEY = 'score-chat.score.v1'
+// The six-page default score takes far longer to render on CI runners.
+const COMPENDIUM_RENDER = 60_000
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(
     ([key, score]) => {
@@ -754,10 +756,12 @@ test('blocked local storage shows a warning while editing remains usable', async
       throw new Error('blocked')
     }
   })
+  // Without storage the default compendium renders, which is slow on CI.
+  test.slow()
   await page.goto('./')
   await expect(
     page.getByRole('img', { name: 'Sheet music, page 1' }),
-  ).toBeVisible()
+  ).toBeVisible({ timeout: COMPENDIUM_RENDER })
   await page.getByRole('tab', { name: 'LilyPond', exact: true }).click()
   await expect(page.getByRole('alert')).toContainText(
     'Browser storage is unavailable',
@@ -793,9 +797,12 @@ test('renderer data is downloaded once, even when renders are cancelled', async 
 })
 
 test('a fresh visit opens the alto saxophone compendium', async ({ page }) => {
+  test.slow()
   await page.addInitScript((key) => localStorage.removeItem(key), SCORE_KEY)
   await page.goto('./')
-  await expect(page.getByText('6 pages · rendered locally')).toBeVisible()
+  await expect(page.getByText('6 pages · rendered locally')).toBeVisible({
+    timeout: COMPENDIUM_RENDER,
+  })
   await page.getByRole('tab', { name: 'LilyPond', exact: true }).click()
   await expect(page.getByLabel('LilyPond source')).toHaveValue(
     /title = "The Complete Alto Saxophone"/,

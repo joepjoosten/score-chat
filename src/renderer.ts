@@ -1,9 +1,19 @@
 import { withMidiOutput } from './midi'
 import type { Anchor } from './selection'
 
+/** Where an error is in the score: 1-based lines, UTF-16 columns. */
+export interface SourcePosition {
+  line: number
+  column: number
+  endLine: number
+  endColumn: number
+}
+
 export interface RenderResult {
   pages: string[]
   errors: string[]
+  /** The position of each error, or null when it has none in the score. */
+  positions: (SourcePosition | null)[]
   anchors: Anchor[]
 }
 export const MAX_SOURCE_LENGTH = 150_000
@@ -120,6 +130,7 @@ export function renderScore(
     return Promise.resolve({
       pages: [],
       errors: ['This score exceeds the 150,000-character limit.'],
+      positions: [null],
       anchors: [],
     })
   return request(
@@ -128,11 +139,13 @@ export function renderScore(
     (data) => ({
       pages: data.pages,
       errors: data.errors,
+      positions: data.positions ?? data.errors.map(() => null),
       anchors: data.anchors ?? [],
     }),
     (reason) => ({
       pages: [],
       errors: [reason.replace(/^Timed out/, 'Rendering timed out')],
+      positions: [null],
       anchors: [],
     }),
   )
@@ -165,7 +178,11 @@ export interface Performance {
 
 export type PerformResult =
   | { performance: Performance; error?: undefined }
-  | { performance?: undefined; error: string }
+  | {
+      performance?: undefined
+      error: string
+      position?: SourcePosition | null
+    }
 
 const NO_MIDI = 'no score requests MIDI output'
 
@@ -184,7 +201,7 @@ export async function performScore(
       (data) =>
         data.performance
           ? { performance: data.performance }
-          : { error: String(data.error) },
+          : { error: String(data.error), position: data.position ?? null },
       (reason) => ({ error: reason }),
     )
   const result = await perform(source)

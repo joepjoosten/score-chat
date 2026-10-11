@@ -361,6 +361,10 @@ svg {
   gap: 12px;
   padding: 24px;
 }
+.source-panel[hidden],
+.score-canvas[hidden] {
+  display: none;
+}
 .source-panel {
   display: flex;
   overflow: hidden;
@@ -388,6 +392,17 @@ svg {
   padding: 10px 16px;
   white-space: pre-wrap;
   border-bottom: 1px solid #f3d9c9;
+}
+.error-position {
+  font: inherit;
+  color: #7a3f20;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  margin-right: 8px;
+  padding: 0;
+}
+.error-position:hover {
+  text-decoration-style: solid;
 }
 
 /* Chat dock: a floating card over the score, collapsible to the composer. */

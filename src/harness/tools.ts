@@ -119,7 +119,14 @@ export function scoreToolHandlers(options: ToolContext) {
       const result = await renderScore(source, signal)
       if (signal.aborted) return 'Cancelled. No changes applied.'
       if (result.errors.length || !result.pages.length)
-        return `Validation failed. Fix these errors and try again:\n${result.errors.join('\n')}`
+        return `Validation failed. Fix these errors and try again:\n${result.errors
+          .map((error, index) => {
+            const position = result.positions[index]
+            return position
+              ? `Line ${position.line}, column ${position.column}: ${error}`
+              : error
+          })
+          .join('\n')}`
       if (apply) {
         if (before !== options.getSource())
           return 'The score changed during validation. Read it again before updating.'

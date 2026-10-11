@@ -32,7 +32,8 @@ import {
   lilypond,
   lilypondHighlight,
 } from './lilypondLanguage'
-import { locateErrors } from './sourceErrors'
+import type { SourcePosition } from './renderer'
+import { markErrors, offsetOf } from './sourceErrors'
 
 const theme = EditorView.theme({
   '&': { height: '100%', background: 'transparent', fontSize: '12px' },
@@ -68,6 +69,8 @@ export default function SourceEditor({
   value,
   readOnly,
   errors,
+  positions,
+  reveal,
   maxLength,
   onChange,
 }: {
@@ -75,6 +78,9 @@ export default function SourceEditor({
   readOnly: boolean
   // Errors from rendering `value`; empty while a render is pending.
   errors: readonly string[]
+  positions: readonly (SourcePosition | null)[]
+  // Selects this position and scrolls it into view whenever it changes.
+  reveal?: SourcePosition | null
   maxLength: number
   onChange: (value: string) => void
 }) {
@@ -83,6 +89,9 @@ export default function SourceEditor({
   const editable = useRef(new Compartment())
   const latest = useRef({ onChange, readOnly })
   latest.current = { onChange, readOnly }
+  // Documents passed to onChange that `value` may not reflect yet: React can
+  // render with a value one keystroke behind, which is not an outside change.
+  const sent = useRef<string[]>([])
 
   const extensions = (): Extension[] => [
     lineNumbers(),
@@ -117,8 +126,10 @@ export default function SourceEditor({
       spellcheck: 'false',
     }),
     EditorView.updateListener.of((update) => {
-      if (update.docChanged)
-        latest.current.onChange(update.state.doc.toString())
+      if (!update.docChanged) return
+      const doc = update.state.doc.toString()
+      sent.current = [...sent.current.slice(-49), doc]
+      latest.current.onChange(doc)
     }),
     theme,
   ]
@@ -140,7 +151,11 @@ export default function SourceEditor({
   // file) start a fresh editing history, so typing undo cannot step past them.
   useEffect(() => {
     const editor = view.current
-    if (!editor || editor.state.doc.toString() === value) return
+    if (!editor) return
+    const echo = sent.current.lastIndexOf(value)
+    if (editor.state.doc.toString() === value) return void (sent.current = [])
+    if (echo >= 0) return void (sent.current = sent.current.slice(echo + 1))
+    sent.current = []
     const scroll = editor.scrollDOM.scrollTop
     editor.setState(
       EditorState.create({ doc: value, extensions: extensions() }),
@@ -161,13 +176,29 @@ export default function SourceEditor({
     editor.dispatch(
       setDiagnostics(
         editor.state,
-        locateErrors(source, errors).map((error) => ({
+        markErrors(source, errors, positions).map((error) => ({
           ...error,
           severity: 'error' as const,
         })),
       ),
     )
-  }, [errors, value])
+  }, [errors, positions, value])
+
+  useEffect(() => {
+    const editor = view.current
+    if (!editor || !reveal) return
+    const source = editor.state.doc.toString()
+    const from = offsetOf(source, reveal.line, reveal.column)
+    const to = Math.max(
+      from,
+      offsetOf(source, reveal.endLine, reveal.endColumn),
+    )
+    editor.dispatch({
+      selection: { anchor: from, head: to },
+      effects: EditorView.scrollIntoView(from, { y: 'center' }),
+    })
+    editor.focus()
+  }, [reveal])
 
   return <div ref={host} className="source-editor" />
 }

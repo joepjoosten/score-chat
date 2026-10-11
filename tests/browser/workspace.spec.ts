@@ -921,3 +921,56 @@ test('the source editor completes commands and marks unsupported ones', async ({
     .poll(() => sourceOf(editor))
     .toMatch(/^\\version "2.24.4"\n\\tuplet\n/)
 })
+
+test('render errors point at their line and column in the source', async ({
+  page,
+}) => {
+  await page.goto('./')
+  await page.getByRole('tab', { name: 'LilyPond', exact: true }).click()
+  const editor = page.getByLabel('LilyPond source')
+  await editor.fill('\\version "2.24.4"\n{ c4 d\n  \\foo e f }')
+  await expect(page.locator('.cm-lintRange-error')).toHaveText('\\foo')
+  await page.getByRole('tab', { name: 'Sheet music', exact: true }).click()
+  await page.getByRole('button', { name: 'Line 3, column 3' }).click()
+  await expect(
+    page.getByRole('tab', { name: 'LilyPond', exact: true }),
+  ).toHaveAttribute('aria-selected', 'true')
+  await expect
+    .poll(() => page.evaluate(() => getSelection()?.toString()))
+    .toBe('\\foo')
+})
+
+test('switching views keeps the place in both the sheet music and the source', async ({
+  page,
+}) => {
+  await page.goto('./')
+  await expect(page.getByText('1 page · rendered locally')).toBeVisible()
+  // Zoom in until the page is taller than the window.
+  for (let i = 0; i < 4; i++)
+    await page.getByRole('button', { name: 'Zoom in' }).click()
+  const canvas = page.locator('#score-panel')
+  // Scroll, then let the views see it for a couple of frames, as a reader would.
+  const scrollTo = (element: Element, top: number) =>
+    new Promise((resolve) => {
+      element.scrollTo({ top })
+      requestAnimationFrame(() => requestAnimationFrame(resolve))
+    })
+  await canvas.evaluate(scrollTo, 300)
+  await page.getByRole('tab', { name: 'LilyPond', exact: true }).click()
+  const editor = page.getByLabel('LilyPond source')
+  // Long enough to scroll; trailing comments leave the sheet music unchanged.
+  await editor.fill(
+    (await sourceOf(editor)) +
+      Array.from({ length: 80 }, (_, i) => `% note ${i + 1}`).join('\n'),
+  )
+  const scroller = page.locator('.cm-scroller')
+  await scroller.evaluate(scrollTo, 200)
+  await page.getByRole('tab', { name: 'Sheet music', exact: true }).click()
+  await expect
+    .poll(() => canvas.evaluate((element) => element.scrollTop))
+    .toBe(300)
+  await page.getByRole('tab', { name: 'LilyPond', exact: true }).click()
+  await expect
+    .poll(() => scroller.evaluate((element) => element.scrollTop))
+    .toBe(200)
+})

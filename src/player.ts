@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { performScore } from './renderer'
+import type { SourcePosition } from './renderer'
 import type { Performance, PlayedNote } from './renderer'
 import { anchorKey } from './selection'
 
@@ -140,6 +141,9 @@ const NOTHING: ReadonlySet<string> = new Set()
 export function usePlayback(source: string) {
   const [state, setState] = useState<PlaybackState>('stopped')
   const [error, setError] = useState('')
+  const [errorPosition, setErrorPosition] = useState<SourcePosition | null>(
+    null,
+  )
   const [sounding, setSounding] = useState<ReadonlySet<string>>(NOTHING)
   const player = useRef<Player | null>(null)
   const loading = useRef<AbortController | null>(null)
@@ -152,6 +156,7 @@ export function usePlayback(source: string) {
       setState('stopped')
       setSounding(NOTHING)
       setError('')
+      setErrorPosition(null)
     },
     [source],
   )
@@ -191,12 +196,14 @@ export function usePlayback(source: string) {
       loading.current = controller
       setState('loading')
       setError('')
+      setErrorPosition(null)
       const result = await performScore(source, controller.signal).catch(
         () => undefined,
       )
       if (controller.signal.aborted) return
       if (!result?.performance) {
         setError(result?.error ?? 'The score could not be performed.')
+        setErrorPosition(result?.position ?? null)
         setState('stopped')
         return
       }
@@ -216,5 +223,5 @@ export function usePlayback(source: string) {
     setSounding(NOTHING)
   }
 
-  return { state, error, sounding, toggle, stop }
+  return { state, error, errorPosition, sounding, toggle, stop }
 }

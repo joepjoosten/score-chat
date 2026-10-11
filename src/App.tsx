@@ -45,7 +45,8 @@ import {
 } from './state'
 import type { DockCorner, Message, MessagePart, Settings } from './state'
 import { MAX_SOURCE_LENGTH, renderScore } from './renderer'
-import type { RenderResult } from './renderer'
+import type { RenderResult, SourcePosition } from './renderer'
+import { errorMessage } from './sourceErrors'
 import {
   anchorKey,
   anchorsInBox,
@@ -60,7 +61,6 @@ import { usePlayback } from './player'
 
 // CodeMirror loads with the LilyPond tab, keeping it out of the main bundle.
 const SourceEditor = lazy(() => import('./SourceEditor'))
-const NO_ERRORS: string[] = []
 
 function download(name: string, content: string, type: string) {
   const url = URL.createObjectURL(new Blob([content], { type }))
@@ -365,11 +365,21 @@ export function App() {
   const [rendered, setRendered] = useState<RenderResult>({
     pages: [],
     errors: [],
+    positions: [],
     anchors: [],
   })
   const [highlighting, setHighlighting] = useState(false)
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
   const [rendering, setRendering] = useState(true)
+  // An error position the source editor should select, from the error panel.
+  const [reveal, setReveal] = useState<SourcePosition | null>(null)
+  // The editor loads with the first visit to the LilyPond tab and then stays.
+  const [sourceOpened, setSourceOpened] = useState(settings.view === 'source')
+  if (settings.view === 'source' && !sourceOpened) setSourceOpened(true)
+  // Only for the visit it was requested for; reopening the source keeps its place.
+  useEffect(() => {
+    if (settings.view !== 'source') setReveal(null)
+  }, [settings.view])
   const [renderedSource, setRenderedSource] = useState('')
   const [zoom, setZoom] = useState(85)
   const [input, setInput] = useState('')
@@ -404,6 +414,17 @@ export function App() {
   const fresh =
     source === renderedSource && !rendering && !rendered.errors.length
   const playback = usePlayback(source)
+  // Marked in the source editor: the render's errors once it has finished, and
+  // a playback error, which can point at music the renderer accepted.
+  const editorErrors = useMemo(() => {
+    const errors = rendering ? [] : [...rendered.errors]
+    const positions = rendering ? [] : [...rendered.positions]
+    if (playback.error) {
+      errors.push(playback.error)
+      positions.push(playback.errorPosition)
+    }
+    return { errors, positions }
+  }, [rendering, rendered, playback.error, playback.errorPosition])
   const pageCount = rendered.pages.length
   const firstPage =
     Math.floor(Math.min(page, Math.max(0, pageCount - 1)) / spread) * spread
@@ -430,6 +451,7 @@ export function App() {
             setRendered({
               pages: [],
               errors: ['Rendering failed. Please try again.'],
+              positions: [null],
               anchors: [],
             })
             setRendering(false)
@@ -454,6 +476,8 @@ export function App() {
     const element = canvas.current
     if (!element) return
     const measure = () => {
+      // Hidden behind the LilyPond tab; keep the spread (and the reader's place).
+      if (!element.clientWidth) return
       const style = getComputedStyle(element)
       const room =
         element.clientWidth -
@@ -465,7 +489,7 @@ export function App() {
     const observer = new ResizeObserver(measure)
     observer.observe(element)
     return () => observer.disconnect()
-  }, [pageWidth, settings.view])
+  }, [pageWidth])
   useEffect(() => {
     canvas.current?.scrollTo({ top: 0 })
   }, [firstPage])
@@ -953,17 +977,37 @@ export function App() {
         )}
         {rendered.errors.length > 0 && !rendering && (
           <div className="render-errors" role="alert">
-            {rendered.errors.map((message, index) => (
-              <div key={index}>{message}</div>
-            ))}
+            {rendered.errors.map((message, index) => {
+              const position = rendered.positions[index]
+              return (
+                <div key={index}>
+                  {position && (
+                    <button
+                      className="error-position"
+                      title="Show in the LilyPond source"
+                      onClick={() => {
+                        setReveal({ ...position })
+                        setSettings({ ...settings, view: 'source' })
+                      }}
+                    >
+                      Line {position.line}, column {position.column}
+                    </button>
+                  )}
+                  {errorMessage(message)}
+                </div>
+              )
+            })}
           </div>
         )}
-        {settings.view === 'source' ? (
+        {/* Both views stay mounted once opened, so switching keeps each one's
+            scroll position (and the editor's selection and history). */}
+        {sourceOpened && (
           <div
             id="source-panel"
             role="tabpanel"
             aria-labelledby="source-tab"
             className="source-panel"
+            hidden={settings.view !== 'source'}
           >
             <Suspense
               fallback={<div className="source-loading">Loading editor…</div>}
@@ -971,7 +1015,9 @@ export function App() {
               <SourceEditor
                 value={source}
                 readOnly={busy}
-                errors={rendering ? NO_ERRORS : rendered.errors}
+                errors={editorErrors.errors}
+                positions={editorErrors.positions}
+                reveal={reveal}
                 maxLength={MAX_SOURCE_LENGTH}
                 onChange={(next) => {
                   // Typing after an undo starts a new branch; the undone replacement is no longer redoable.
@@ -981,76 +1027,74 @@ export function App() {
               />
             </Suspense>
           </div>
-        ) : (
-          <div
-            id="score-panel"
-            role="tabpanel"
-            aria-labelledby="score-tab"
-            ref={canvas}
-            className="score-canvas"
-            aria-busy={rendering}
-          >
-            {rendering && !rendered.pages.length && (
-              <div className="empty-score">
-                <LoaderCircle className="spin" size={24} />
-                <p>Engraving your music…</p>
-              </div>
-            )}
-            {shownPages.length > 0 && (
-              <div className="page-spread">
-                {shownPages.map(({ svg: page, index }) => (
-                  <div
-                    key={index}
-                    className={`sheet-page ${fresh ? '' : 'stale'}`}
-                    style={{
-                      width:
-                        spread > 1
-                          ? `${pageWidth}px`
-                          : `min(${pageWidth}px, ${(zoom / 85) * 100}%)`,
-                    }}
-                  >
-                    {settings.pages === 'inline' ? (
-                      <div
-                        className="sheet-svg"
-                        role="img"
-                        aria-label={`Sheet music, page ${index + 1}`}
-                        dangerouslySetInnerHTML={{ __html: inlinePages[index] }}
-                      />
-                    ) : (
-                      <img
-                        alt={`Sheet music, page ${index + 1}`}
-                        src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(page)}`}
-                      />
-                    )}
-                    <PageOverlay
-                      page={index}
-                      viewBox={
-                        page.match(/viewBox="([^"]+)"/)?.[1] ?? '0 0 1 1'
-                      }
-                      anchors={rendered.anchors}
-                      selected={selected}
-                      sounding={playback.sounding}
-                      active={highlighting && fresh}
-                      onSelect={toggleSelection}
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-            {!rendering && !rendered.pages.length && (
-              <div className="empty-score">
-                <FileMusic size={32} />
-                <p>This score needs a little attention.</p>
-                <button
-                  className="outlined-button"
-                  onClick={() => setSettings({ ...settings, view: 'source' })}
-                >
-                  Edit LilyPond source
-                </button>
-              </div>
-            )}
-          </div>
         )}
+        <div
+          id="score-panel"
+          role="tabpanel"
+          aria-labelledby="score-tab"
+          ref={canvas}
+          className="score-canvas"
+          aria-busy={rendering}
+          hidden={settings.view !== 'score'}
+        >
+          {rendering && !rendered.pages.length && (
+            <div className="empty-score">
+              <LoaderCircle className="spin" size={24} />
+              <p>Engraving your music…</p>
+            </div>
+          )}
+          {shownPages.length > 0 && (
+            <div className="page-spread">
+              {shownPages.map(({ svg: page, index }) => (
+                <div
+                  key={index}
+                  className={`sheet-page ${fresh ? '' : 'stale'}`}
+                  style={{
+                    width:
+                      spread > 1
+                        ? `${pageWidth}px`
+                        : `min(${pageWidth}px, ${(zoom / 85) * 100}%)`,
+                  }}
+                >
+                  {settings.pages === 'inline' ? (
+                    <div
+                      className="sheet-svg"
+                      role="img"
+                      aria-label={`Sheet music, page ${index + 1}`}
+                      dangerouslySetInnerHTML={{ __html: inlinePages[index] }}
+                    />
+                  ) : (
+                    <img
+                      alt={`Sheet music, page ${index + 1}`}
+                      src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(page)}`}
+                    />
+                  )}
+                  <PageOverlay
+                    page={index}
+                    viewBox={page.match(/viewBox="([^"]+)"/)?.[1] ?? '0 0 1 1'}
+                    anchors={rendered.anchors}
+                    selected={selected}
+                    sounding={playback.sounding}
+                    active={highlighting && fresh}
+                    onSelect={toggleSelection}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+          {!rendering && !rendered.pages.length && (
+            <div className="empty-score">
+              <FileMusic size={32} />
+              <p>This score needs a little attention.</p>
+              <button
+                className="outlined-button"
+                onClick={() => setSettings({ ...settings, view: 'source' })}
+              >
+                Edit LilyPond source
+              </button>
+            </div>
+          )}
+        </div>
         <section
           ref={dockRef}
           className="chat-dock"

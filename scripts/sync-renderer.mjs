@@ -53,6 +53,12 @@ await build({
       import { pointAndClickLinker } from './src/render/point-and-click.ts';
       import { iterateSourcePerformances, performSourceMusic } from './src/performance/index.ts';
       import { momentDuration, performanceTicks } from './src/performance/time.ts';
+      import { errorSpan } from './src/core/error-span.ts';
+      // Where in the score an error is; null outside it (an \\include) or when unknown.
+      const position = (span) =>
+        span && span.file === 'score.ly'
+          ? { line: span.startLine, column: span.startColumn, endLine: span.endLine, endColumn: span.endColumn }
+          : null;
       // Data files come from the page, which fetches each one once and hands it
       // to every worker, so replacing a cancelled worker downloads nothing again.
       const files = new Map();
@@ -190,18 +196,20 @@ await build({
             await ready;
             self.postMessage({ id, performance: performScore(source) });
           } catch (error) {
-            self.postMessage({ id, error: error instanceof Error ? error.message : String(error) });
+            self.postMessage({ id, error: error instanceof Error ? error.message : String(error), position: position(errorSpan(error)) });
           }
           return;
         }
         try {
           const fontManifest = await ready;
           const result = renderLySourceToSvg(source, { file: 'score.ly', fontManifest });
-          const errors = result.diagnostics.filter(d => d.severity === 'error').map(d => d.message);
+          const failures = result.diagnostics.filter(d => d.severity === 'error');
+          const errors = failures.map(d => d.message);
+          const positions = failures.map(d => position(d.span));
           const pages = result.render?.assembly.renderedPages.map(p => p.svg) ?? (result.svg ? [result.svg] : []);
-          self.postMessage({ id, pages, errors, anchors: collectAnchors(result, pages, source) });
+          self.postMessage({ id, pages, errors, positions, anchors: collectAnchors(result, pages, source) });
         } catch (error) {
-          self.postMessage({ id, pages: [], errors: [String(error)], anchors: [] });
+          self.postMessage({ id, pages: [], errors: [String(error)], positions: [position(errorSpan(error))], anchors: [] });
         }
       };
     `,

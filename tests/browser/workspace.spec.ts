@@ -801,3 +801,21 @@ test('a fresh visit opens the alto saxophone compendium', async ({ page }) => {
     /title = "The Complete Alto Saxophone"/,
   )
 })
+
+test('playback lights up the sounding note heads, pauses, and rewinds', async ({
+  page,
+}) => {
+  await page.goto('./')
+  await expect(page.getByText('1 page · rendered locally')).toBeVisible()
+  const sounding = page.locator('.page-overlay .sounding')
+  // The simple score has no \midi block; playback adds one.
+  await page.getByRole('button', { name: 'Play', exact: true }).click()
+  await expect(sounding).toHaveCount(1)
+  await page.getByRole('button', { name: 'Pause', exact: true }).click()
+  await expect(sounding).toHaveCount(1)
+  await page.getByRole('button', { name: 'Back to the start' }).click()
+  await expect(sounding).toHaveCount(0)
+  await expect(
+    page.getByRole('button', { name: 'Play', exact: true }),
+  ).toBeVisible()
+})

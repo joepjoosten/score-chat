@@ -917,3 +917,12 @@ dialog select:focus {
     transition: none !important;
   }
 }
+.icon-button.playing {
+  background: #e3efe0;
+  color: #3f6b3a;
+}
+.page-overlay .sounding {
+  fill: #3f9b4a;
+  opacity: 0.45;
+  mix-blend-mode: multiply;
+}

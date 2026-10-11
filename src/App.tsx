@@ -16,10 +16,13 @@ import {
   LoaderCircle,
   MessageSquare,
   Music2,
+  Pause,
+  Play,
   Settings2,
   SlidersHorizontal,
   Sparkles,
   Square,
+  SkipBack,
   Trash2,
   Redo2,
   Undo2,
@@ -50,6 +53,7 @@ import {
 } from './selection'
 import type { Anchor, Box } from './selection'
 import { sanitizeSvg } from './svg'
+import { usePlayback } from './player'
 
 function download(name: string, content: string, type: string) {
   const url = URL.createObjectURL(new Blob([content], { type }))
@@ -66,6 +70,7 @@ function PageOverlay({
   viewBox,
   anchors,
   selected,
+  sounding,
   active,
   onSelect,
 }: {
@@ -73,6 +78,8 @@ function PageOverlay({
   viewBox: string
   anchors: readonly Anchor[]
   selected: ReadonlySet<string>
+  /** Anchor keys of the notes playing right now. */
+  sounding: ReadonlySet<string>
   active: boolean
   onSelect: (anchors: Anchor[]) => void
 }) {
@@ -118,6 +125,22 @@ function PageOverlay({
       {markerStrokes(anchors, selected, page).map((box, index) => (
         <rect key={index} className="marker" rx={1} {...box} />
       ))}
+      {anchors.map(
+        (anchor, index) =>
+          anchor.page === page &&
+          anchor.kind === 'NoteHead' &&
+          sounding.has(anchorKey(anchor)) && (
+            <rect
+              key={`sounding-${index}`}
+              className="sounding"
+              rx={0.6}
+              x={anchor.x - 0.5}
+              y={anchor.y - 0.5}
+              width={anchor.width + 1}
+              height={anchor.height + 1}
+            />
+          ),
+      )}
       {marquee && <rect className="marquee" {...marquee} />}
     </svg>
   )
@@ -340,6 +363,7 @@ export function App() {
     source.match(/\btitle\s*=\s*"([^"\n]*)"/)?.[1] || 'Untitled score'
   const fresh =
     source === renderedSource && !rendering && !rendered.errors.length
+  const playback = usePlayback(source)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -375,6 +399,16 @@ export function App() {
     if (log && followChat.current) log.scrollTop = log.scrollHeight
   }, [messages, busy, agentStatus, chatOpen, dockSize])
   useEffect(() => () => abortRef.current?.abort(), [])
+  // Keep the sounding notes in view as playback turns the pages.
+  useEffect(() => {
+    const note = document.querySelector('.page-overlay .sounding')
+    const canvas = note?.closest('.score-canvas')
+    if (!note || !canvas) return
+    const box = note.getBoundingClientRect()
+    const view = canvas.getBoundingClientRect()
+    if (box.top < view.top + 40 || box.bottom > view.bottom - 40)
+      note.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [playback.sounding])
 
   function replaceScore(next: string) {
     const current = registry.get(sourceAtom)
@@ -560,6 +594,10 @@ export function App() {
                 </>
               ) : rendered.errors.length ? (
                 <span className="status-bad">Could not render this source</span>
+              ) : playback.error ? (
+                <span className="status-bad" title={playback.error}>
+                  Could not play: {playback.error}
+                </span>
               ) : (
                 <>
                   <Check size={11} /> {rendered.pages.length} page
@@ -611,6 +649,31 @@ export function App() {
             onClick={() => travel(redo, setRedo, setUndo)}
           >
             <Redo2 size={16} />
+          </button>
+          <span className="toolbar-divider" />
+          <button
+            className={`icon-button ${playback.state === 'playing' ? 'playing' : ''}`}
+            title={playback.state === 'playing' ? 'Pause' : 'Play'}
+            aria-label={playback.state === 'playing' ? 'Pause' : 'Play'}
+            disabled={!fresh && playback.state === 'stopped'}
+            onClick={playback.toggle}
+          >
+            {playback.state === 'loading' ? (
+              <LoaderCircle size={16} className="spin" />
+            ) : playback.state === 'playing' ? (
+              <Pause size={16} />
+            ) : (
+              <Play size={16} />
+            )}
+          </button>
+          <button
+            className="icon-button"
+            title="Back to the start"
+            aria-label="Back to the start"
+            disabled={playback.state === 'stopped'}
+            onClick={playback.stop}
+          >
+            <SkipBack size={16} />
           </button>
           {settings.view === 'score' && (
             <button
@@ -795,6 +858,7 @@ export function App() {
                   viewBox={page.match(/viewBox="([^"]+)"/)?.[1] ?? '0 0 1 1'}
                   anchors={rendered.anchors}
                   selected={selected}
+                  sounding={playback.sounding}
                   active={highlighting && fresh}
                   onSelect={toggleSelection}
                 />

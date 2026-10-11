@@ -51,6 +51,8 @@ await build({
       import { renderLySourceToSvg } from './src/render/ly-to-svg.ts';
       import { loadRendererData } from './src/data/renderer-data.ts';
       import { pointAndClickLinker } from './src/render/point-and-click.ts';
+      import { iterateSourcePerformances, performSourceMusic } from './src/performance/index.ts';
+      import { momentDuration, performanceTicks } from './src/performance/time.ts';
       // Data files come from the page, which fetches each one once and hands it
       // to every worker, so replacing a cancelled worker downloads nothing again.
       const files = new Map();
@@ -109,6 +111,71 @@ await build({
         });
         return anchors;
       };
+      // Seconds at a MIDI tick, following the tempo changes of every track.
+      const midiClock = (performance) => {
+        const tempos = performance.tracks.flat()
+          .filter((event) => event.status === 255 && event.type === 81)
+          .map((event) => ({
+            tick: event.tick,
+            perTick: ((event.data[0] << 16) | (event.data[1] << 8) | event.data[2]) / 1e6 / performance.division,
+          }))
+          .sort((a, b) => a.tick - b.tick);
+        return (tick) => {
+          let seconds = 0, at = 0, perTick = 0.5 / performance.division;
+          for (const tempo of tempos) {
+            if (tempo.tick > tick) break;
+            seconds += (tempo.tick - at) * perTick;
+            at = tempo.tick;
+            perTick = tempo.perTick;
+          }
+          return seconds + (tick - at) * perTick;
+        };
+      };
+      // Performs every score that requests MIDI, one after another. Notes are the
+      // sounding MIDI notes; cues are the source events of the notes, so the app
+      // can light up the printed note heads while they sound.
+      const performScore = (source) => {
+        const notes = [], cues = [];
+        let start = 0;
+        for (const input of iterateSourcePerformances(source, { file: 'score.ly' })) {
+          const performance = performSourceMusic(input);
+          const seconds = midiClock(performance);
+          let end = 0;
+          for (const track of performance.tracks) {
+            const sounding = new Map();
+            for (const event of track) {
+              end = Math.max(end, seconds(event.tick));
+              const kind = event.status & 0xf0, channel = event.status & 15;
+              if (kind !== 0x90 && kind !== 0x80) continue;
+              const key = channel * 128 + event.data[0];
+              if (kind === 0x90 && event.data[1] > 0) {
+                sounding.set(key, event);
+                continue;
+              }
+              const on = sounding.get(key);
+              if (!on) continue;
+              sounding.delete(key);
+              const time = seconds(on.tick);
+              notes.push({ time: start + time, duration: seconds(event.tick) - time, pitch: event.data[0], velocity: on.data[1], channel });
+            }
+          }
+          // The MIDI tracks start at the first event; shift source moments the same way.
+          const events = performance.source.events;
+          const offset = Math.min(0, events[0] ? performanceTicks(events[0].moment) : 0);
+          for (const event of events) {
+            const { music } = event, origin = music.origin, duration = music.properties.duration;
+            if (music.type !== 'NoteEvent' || !duration || origin?.file !== 'score.ly') continue;
+            if (event.settings['midi-remove.Note_performer'] === true) continue;
+            const tick = performanceTicks(event.moment) - offset;
+            const length = performanceTicks(momentDuration(duration, music.properties.grace === true));
+            cues.push({ time: start + seconds(tick), end: start + seconds(tick + length), line: origin.startLine, column: origin.startColumn });
+          }
+          start += end + 1;
+        }
+        notes.sort((a, b) => a.time - b.time);
+        cues.sort((a, b) => a.time - b.time);
+        return { notes, cues, duration: Math.max(0, start - 1) };
+      };
       self.onmessage = async ({ data }) => {
         if (data.type === 'data') {
           const file = files.get(data.name);
@@ -118,6 +185,15 @@ await build({
           return;
         }
         const { id, source } = data;
+        if (data.type === 'perform') {
+          try {
+            await ready;
+            self.postMessage({ id, performance: performScore(source) });
+          } catch (error) {
+            self.postMessage({ id, error: error instanceof Error ? error.message : String(error) });
+          }
+          return;
+        }
         try {
           const fontManifest = await ready;
           const result = renderLySourceToSvg(source, { file: 'score.ly', fontManifest });

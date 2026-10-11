@@ -3,6 +3,23 @@ import type { Page } from '@playwright/test'
 import { transformSync } from 'esbuild'
 import { readFileSync } from 'node:fs'
 
+// Most tests exercise a one-page score; the app's default is the multi-page saxophone compendium.
+const simpleScore = readFileSync(
+  new URL('./simple-score.ly', import.meta.url),
+  'utf8',
+)
+const SCORE_KEY = 'score-chat.score.v1'
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(
+    ([key, score]) => {
+      try {
+        if (localStorage.getItem(key) === null) localStorage.setItem(key, score)
+      } catch {}
+    },
+    [SCORE_KEY, simpleScore],
+  )
+})
+
 async function configure(page: Page) {
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.getByLabel('OpenRouter API key').fill('test-key-only')
@@ -773,4 +790,14 @@ test('renderer data is downloaded once, even when renders are cancelled', async 
   await expect(page.getByRole('heading', { name: 'Fourth' })).toBeVisible()
   expect(downloads.size).toBe(7)
   expect([...downloads.values()].every((count) => count === 1)).toBe(true)
+})
+
+test('a fresh visit opens the alto saxophone compendium', async ({ page }) => {
+  await page.addInitScript((key) => localStorage.removeItem(key), SCORE_KEY)
+  await page.goto('./')
+  await expect(page.getByText('6 pages · rendered locally')).toBeVisible()
+  await page.getByRole('tab', { name: 'LilyPond', exact: true }).click()
+  await expect(page.getByLabel('LilyPond source')).toHaveValue(
+    /title = "The Complete Alto Saxophone"/,
+  )
 })

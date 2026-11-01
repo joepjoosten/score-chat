@@ -32,7 +32,7 @@ Open **Settings**, enter an OpenRouter API key and a model ID with tool-calling 
 
 Vite emits only static files into `dist/`. There is no backend, server function, or runtime package installation. Asset paths are relative, so the same build works at a domain root or a GitHub Pages repository path. This app does not use history routing or require rewrite rules.
 
-The LilyPond compiler runs in a dedicated Web Worker, with a 20-second timeout and a source-size limit. Alongside each page's SVG, the worker reports the page-space box of every printed element that the renderer's LilyPond point-and-click links to a music event, together with that event's source span and the grob kind (from the system placements); the app draws highlights on a transparent overlay from that data. SVGs are displayed as images by default; the optional inline mode sanitizes the markup (`src/svg.ts`) before injecting it. The music font is bundled; rendering makes no external requests. The renderer supports a subset of LilyPond **2.24.4**, not all GNU LilyPond features, and reports unsupported syntax as diagnostics with their source line and column, which the worker passes on with each error (and to the assistant when it validates an edit).
+The LilyPond compiler runs in a dedicated Web Worker, with a 20-second timeout and a source-size limit. Alongside each page's SVG, the worker reports the page-space box of every printed element that the renderer's LilyPond point-and-click links to a music event, together with that event's source span and the grob kind (from the system placements); the app draws highlights on a transparent overlay from that data. SVGs are displayed as images by default; the optional inline mode sanitizes the markup (`src/svg.ts`) before injecting it. The music font is bundled; rendering makes no external requests. Renderer data, the optional LilyJAZZ fonts and their stylesheets load just in time: the worker renders, fetches from this site exactly the tables, font sizes and `\include`d stylesheets that render read, and renders again, so a score only downloads what it uses. A score selects the jazz look with `\include "lilyjazz.ily"` and, for chord symbols, `\include "jazzchords.ily"`. The renderer supports a subset of LilyPond **2.24.4**, not all GNU LilyPond features, and reports unsupported syntax as diagnostics with their source line and column, which the worker passes on with each error (and to the assistant when it validates an edit).
 
 The agent loop runs locally, but **model inference happens through OpenRouter**, not on your computer. Sending a message shares the current score and conversation with OpenRouter and the selected provider. Your API key is sent in the authorization header to OpenRouter; it is never included in the build, prompt, or displayed errors. Browser local storage is not an encrypted secret store; use a limited-spend key and avoid shared devices. Clearing the key in Settings and saving removes it from the stored settings.
 
@@ -58,6 +58,8 @@ npm run renderer:sync -- /path/to/lilypond-typescript
 npm run build
 npm run test:e2e
 ```
+
+To refresh the LilyJAZZ fonts and stylesheets in `public/renderer/fonts/lilyjazz`, pass a checkout of [OpenLilyPondFonts/lilyjazz](https://github.com/OpenLilyPondFonts/lilyjazz): `npm run renderer:sync -- --fonts=/path/to/lilyjazz`. Without it the synced fonts are kept.
 
 For profiling or debugging locally, `npm run renderer:sync -- --debug` writes an unminified worker with a source map instead; sync again without it before committing.
 

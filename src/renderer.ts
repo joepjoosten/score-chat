@@ -21,25 +21,29 @@ export const MAX_SOURCE_LENGTH = 150_000
 const rendererUrl = () =>
   new URL(`${import.meta.env.BASE_URL}renderer/`, document.baseURI)
 
-// Renderer data is a few megabytes of JSON. Fetch each file once per page and
-// hand the text to every worker that asks, instead of letting each new worker
-// download it again.
-const dataFiles = new Map<string, Promise<string>>()
-function dataFile(name: string): Promise<string> {
-  let text = dataFiles.get(name)
-  if (!text) {
-    text = fetch(new URL(`data/${name}`, rendererUrl())).then((response) => {
-      if (!response.ok)
-        throw new Error(
-          `Failed to load renderer data ${name}: HTTP ${response.status}`,
-        )
-      return response.text()
-    })
+// Renderer data (a few megabytes of JSON), optional fonts and stylesheets.
+// Workers ask only for what a score reads, just in time. Fetch each file once
+// per page and hand it to every worker that asks, instead of letting each new
+// worker download it again.
+const assets = new Map<string, Promise<string | ArrayBuffer>>()
+function asset(path: string, binary: boolean): Promise<string | ArrayBuffer> {
+  const key = `${binary ? 'bin' : 'text'}:${path}`
+  let content = assets.get(key)
+  if (!content) {
+    content = fetch(new URL(path, rendererUrl())).then(
+      (response): Promise<string | ArrayBuffer> => {
+        if (!response.ok)
+          throw new Error(
+            `Failed to load renderer file ${path}: HTTP ${response.status}`,
+          )
+        return binary ? response.arrayBuffer() : response.text()
+      },
+    )
     // Let a later render retry a failed download.
-    text.catch(() => dataFiles.delete(name))
-    dataFiles.set(name, text)
+    content.catch(() => assets.delete(key))
+    assets.set(key, content)
   }
-  return text
+  return content
 }
 
 function startWorker(): Worker {
@@ -47,15 +51,18 @@ function startWorker(): Worker {
     type: 'module',
   })
   worker.addEventListener('message', ({ data }) => {
-    if (data?.type !== 'data') return
-    dataFile(data.name).then(
-      (text) => worker.postMessage({ type: 'data', name: data.name, text }),
-      (error) =>
+    if (data?.type !== 'asset') return
+    const { request, path, binary } = data
+    asset(path, binary).then(
+      // Binary content is copied, so the cached buffer stays usable.
+      (content) =>
         worker.postMessage({
-          type: 'data',
-          name: data.name,
-          error: String(error),
+          type: 'asset',
+          request,
+          content: content instanceof ArrayBuffer ? content.slice(0) : content,
         }),
+      (error) =>
+        worker.postMessage({ type: 'asset', request, error: String(error) }),
     )
   })
   return worker

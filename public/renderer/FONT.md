@@ -14,3 +14,18 @@ the SIL Open Font License 1.1. `LICENSE.OFL` preserves that license. The SVG
 also retains an older embedded GPL notice and font exception; the GPLv3 text
 is preserved in `COPYING`. The original font sources are available in the
 [LilyPond 2.24.4 source tree](https://gitlab.com/lilypond/lilypond/-/tree/v2.24.4/mf).
+
+# Optional LilyJAZZ fonts
+
+`fonts/lilyjazz/` holds the unmodified LilyJAZZ music font (`lilyjazz-*.svg`
+and `.otf`, every optical size and the brace font), the LilyJAZZ Text and
+Chord fonts, and the `lilyjazz.ily`, `jazzchords.ily` and `jazzextras.ily`
+stylesheets from [OpenLilyPondFonts/lilyjazz](https://github.com/OpenLilyPondFonts/lilyjazz)
+(revision in `fonts/lilyjazz/version.json`). The worker downloads a file only
+when a score uses it.
+
+The text and chord fonts are under the SIL Open Font License 1.1
+(`lilyjazz-text-OFL.txt`, `lilyjazz-chord-OFL.txt`, with their FONTLOGs). The
+repository describes the music font's licensing as not completely clear and
+treats it as released under LilyPond's license (GPL); see `fonts/lilyjazz/LICENSE`
+and `FONTLOG.txt`, and `COPYING` for the GPLv3 text.

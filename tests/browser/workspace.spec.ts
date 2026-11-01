@@ -139,6 +139,29 @@ test('imports a score, reports invalid input, and recovers with undo and redo', 
   await expect(image).toBeVisible()
 })
 
+test('opens a LilyPond file dropped anywhere on the page', async ({ page }) => {
+  await page.goto('./')
+  await page.getByRole('tab', { name: 'LilyPond', exact: true }).click()
+  const editor = page.getByLabel('LilyPond source')
+  await expect(editor).toBeVisible()
+  const dropped = simpleScore.replace('A little beginning', 'A dropped score')
+  const transfer = await page.evaluateHandle((text) => {
+    const data = new DataTransfer()
+    data.items.add(new File([text], 'dropped.ly', { type: 'text/plain' }))
+    return data
+  }, dropped)
+  await editor.dispatchEvent('dragenter', { dataTransfer: transfer })
+  await expect(page.getByText('Drop a LilyPond file to open it')).toBeVisible()
+  await editor.dispatchEvent('dragover', { dataTransfer: transfer })
+  await editor.dispatchEvent('drop', { dataTransfer: transfer })
+  await expect(page.getByText('Drop a LilyPond file to open it')).toBeHidden()
+  // Replaced, not inserted into the editor at the drop point.
+  await expect.poll(() => sourceOf(editor)).toBe(dropped)
+  await expect(
+    page.getByRole('button', { name: 'Undo last score replacement' }),
+  ).toBeEnabled()
+})
+
 test('agent executes a validated score edit through Effect AI and preserves tool results', async ({
   page,
 }) => {

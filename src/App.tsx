@@ -389,6 +389,8 @@ export function App() {
   const [undo, setUndo] = useState<string[]>([])
   const [redo, setRedo] = useState<string[]>([])
   const fileInput = useRef<HTMLInputElement>(null)
+  // Whether a file is being dragged over the page.
+  const [fileDrag, setFileDrag] = useState(false)
   const chatInput = useRef<HTMLTextAreaElement>(null)
   const chatLog = useRef<HTMLDivElement>(null)
   // Follow streaming output only while the reader is at the bottom of the conversation.
@@ -545,6 +547,71 @@ export function App() {
     const next = firstPage + step * spread
     if (next >= 0 && next < pageCount) setPage(next)
   }
+
+  async function importFile(file: File) {
+    if (file.size > MAX_SOURCE_LENGTH) {
+      setError('Choose a LilyPond file smaller than 150 KB.')
+      setChatOpen(true)
+      return
+    }
+    try {
+      const contents = await file.text()
+      replaceScore(contents)
+      setError('')
+    } catch {
+      setError('Could not read this file.')
+      setChatOpen(true)
+    }
+  }
+  const importRef = useRef(importFile)
+  importRef.current = importFile
+  const busyRef = useRef(busy)
+  busyRef.current = busy
+
+  // A file dropped anywhere on the page opens it, like the Open .ly button. Listening in
+  // the capture phase keeps the source editor and chat box from inserting it as text.
+  useEffect(() => {
+    const hasFiles = (event: DragEvent) =>
+      event.dataTransfer?.types.includes('Files') ?? false
+    // dragenter and dragleave fire for every child crossed, so count the nesting.
+    let depth = 0
+    const enter = (event: DragEvent) => {
+      if (!hasFiles(event)) return
+      event.preventDefault()
+      depth++
+      if (!busyRef.current) setFileDrag(true)
+    }
+    const over = (event: DragEvent) => {
+      if (!hasFiles(event)) return
+      event.preventDefault()
+      event.stopPropagation()
+      event.dataTransfer!.dropEffect = busyRef.current ? 'none' : 'copy'
+    }
+    const leave = (event: DragEvent) => {
+      if (!hasFiles(event)) return
+      depth = Math.max(0, depth - 1)
+      if (!depth) setFileDrag(false)
+    }
+    const drop = (event: DragEvent) => {
+      if (!hasFiles(event)) return
+      event.preventDefault()
+      event.stopPropagation()
+      depth = 0
+      setFileDrag(false)
+      const file = event.dataTransfer?.files[0]
+      if (file && !busyRef.current) void importRef.current(file)
+    }
+    window.addEventListener('dragenter', enter, true)
+    window.addEventListener('dragover', over, true)
+    window.addEventListener('dragleave', leave, true)
+    window.addEventListener('drop', drop, true)
+    return () => {
+      window.removeEventListener('dragenter', enter, true)
+      window.removeEventListener('dragover', over, true)
+      window.removeEventListener('dragleave', leave, true)
+      window.removeEventListener('drop', drop, true)
+    }
+  }, [])
 
   function replaceScore(next: string) {
     const current = registry.get(sourceAtom)
@@ -940,25 +1007,18 @@ export function App() {
         accept=".ly,text/plain"
         className="visually-hidden"
         aria-label="Import LilyPond file"
-        onChange={async (event) => {
+        onChange={(event) => {
           const file = event.target.files?.[0]
           event.target.value = ''
-          if (!file) return
-          if (file.size > MAX_SOURCE_LENGTH) {
-            setError('Choose a LilyPond file smaller than 150 KB.')
-            setChatOpen(true)
-            return
-          }
-          try {
-            const contents = await file.text()
-            replaceScore(contents)
-            setError('')
-          } catch {
-            setError('Could not read this file.')
-            setChatOpen(true)
-          }
+          if (file) void importFile(file)
         }}
       />
+      {fileDrag && (
+        <div className="drop-overlay" aria-hidden="true">
+          <FileUp size={28} />
+          <span>Drop a LilyPond file to open it</span>
+        </div>
+      )}
       <main
         className="stage"
         data-chat={chatHidden ? 'hidden' : chatOpen ? 'open' : 'closed'}

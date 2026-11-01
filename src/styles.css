@@ -1028,3 +1028,20 @@ dialog select:focus {
   opacity: 0.45;
   mix-blend-mode: multiply;
 }
+.drop-overlay {
+  position: fixed;
+  inset: 10px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 2px dashed #647f56;
+  border-radius: 14px;
+  color: #3f5235;
+  font-size: 15px;
+  font-weight: 500;
+  background: rgb(246 245 241 / 0.88);
+  pointer-events: none;
+}

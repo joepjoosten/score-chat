@@ -1,13 +1,24 @@
 import { build } from 'esbuild'
-import { copyFile, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
+import {
+  copyFile,
+  mkdir,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 
 // `--debug` builds a readable worker with a source map for local inspection.
 // Run the sync again without it before committing.
+// `--fonts=<lilyjazz checkout>` refreshes the optional jazz fonts; without it
+// the fonts already in public/renderer/fonts are kept.
 const args = process.argv.slice(2)
 const debug = args.includes('--debug')
+const fontSource = args.find((arg) => arg.startsWith('--fonts='))?.slice(8)
 const root = resolve(
   args.find((arg) => !arg.startsWith('--')) ??
     `${homedir()}/development/github/lilypond-typescript`,
@@ -39,6 +50,64 @@ await copyFile(
   resolve(root, 'assets/fonts/LICENSE.OFL'),
   'public/renderer/LICENSE.OFL',
 )
+// Optional fonts are fetched by the worker only when a score selects them
+// (renderJustInTime), one optical size or text font at a time.
+const fontsDir = 'public/renderer/fonts'
+if (fontSource) {
+  const source = resolve(fontSource)
+  await rm(fontsDir, { recursive: true, force: true })
+  await mkdir(`${fontsDir}/lilyjazz`, { recursive: true })
+  for (const kind of ['svg', 'otf'])
+    for (const file of await readdir(join(source, kind)))
+      if (/^lilyjazz-(\d+|brace)\.(svg|otf)$/.test(file))
+        await copyFile(join(source, kind, file), `${fontsDir}/lilyjazz/${file}`)
+  for (const text of ['lilyjazz-text', 'lilyjazz-chord']) {
+    await copyFile(
+      join(source, 'supplementary-files', text, `${text}.otf`),
+      `${fontsDir}/lilyjazz/${text}.otf`,
+    )
+    for (const notice of ['OFL.txt', 'FONTLOG.txt'])
+      await copyFile(
+        join(source, 'supplementary-files', text, notice),
+        `${fontsDir}/lilyjazz/${text}-${notice}`,
+      )
+  }
+  for (const file of ['LICENSE', 'FONTLOG.txt'])
+    await copyFile(join(source, file), `${fontsDir}/lilyjazz/${file}`)
+  await mkdir(`${fontsDir}/lilyjazz/stylesheet`)
+  for (const file of await readdir(join(source, 'stylesheet')))
+    if (file.endsWith('.ily'))
+      await copyFile(
+        join(source, 'stylesheet', file),
+        `${fontsDir}/lilyjazz/stylesheet/${file}`,
+      )
+  const revision = execFileSync('git', ['-C', source, 'rev-parse', 'HEAD'], {
+    encoding: 'utf8',
+  }).trim()
+  await writeFile(
+    `${fontsDir}/lilyjazz/version.json`,
+    JSON.stringify(
+      { repository: 'OpenLilyPondFonts/lilyjazz', revision },
+      null,
+      2,
+    ) + '\n',
+  )
+}
+// What the worker may load on demand, read from the synced files.
+const catalog = { music: {}, text: [], includes: {} }
+if (existsSync(`${fontsDir}/lilyjazz`)) {
+  const files = await readdir(`${fontsDir}/lilyjazz`)
+  const parts = files
+    .map((file) => /^lilyjazz-(\d+|brace)\.otf$/.exec(file)?.[1])
+    .filter((part) => part && files.includes(`lilyjazz-${part}.svg`))
+  if (parts.includes('20')) catalog.music.lilyjazz = parts
+  for (const text of ['lilyjazz-text', 'lilyjazz-chord'])
+    if (files.includes(`${text}.otf`)) catalog.text.push(text)
+  for (const file of await readdir(`${fontsDir}/lilyjazz/stylesheet`).catch(
+    () => [],
+  ))
+    catalog.includes[file] = `fonts/lilyjazz/stylesheet/${file}`
+}
 await copyFile(
   resolve(root, 'lilypond-2.24.4/COPYING'),
   'public/renderer/COPYING',
@@ -47,9 +116,11 @@ await build({
   stdin: {
     contents: `
       import font from './assets/fonts/emmentaler-20.svg';
-      import { parseSvgFontManifest, withPinnedEmmentalerMetrics } from './src/fonts/glyphs.ts';
+      import { lazyPinnedEmmentalerManifest } from './src/fonts/glyphs.ts';
       import { renderLySourceToSvg } from './src/render/ly-to-svg.ts';
-      import { loadRendererData } from './src/data/renderer-data.ts';
+      import { renderJustInTime, loadRendererDataTables, EMMENTALER_GLYPH_TABLES } from './src/render/just-in-time.ts';
+      import { declareMusicFont } from './src/fonts/music-font.ts';
+      import { declareTextFont } from './src/fonts/text-font.ts';
       import { pointAndClickLinker } from './src/render/point-and-click.ts';
       import { iterateSourcePerformances, performSourceMusic } from './src/performance/index.ts';
       import { momentDuration, performanceTicks } from './src/performance/time.ts';
@@ -59,15 +130,59 @@ await build({
         span && span.file === 'score.ly'
           ? { line: span.startLine, column: span.startColumn, endLine: span.endLine, endColumn: span.endColumn }
           : null;
-      // Data files come from the page, which fetches each one once and hands it
-      // to every worker, so replacing a cancelled worker downloads nothing again.
-      const files = new Map();
-      const readFile = (name) => new Promise((resolve, reject) => {
-        files.set(name, { resolve, reject });
-        self.postMessage({ type: 'data', name });
+      // Renderer data, fonts and stylesheets come from the page, which fetches
+      // each file once and hands it to every worker, so replacing a cancelled
+      // worker downloads nothing again. Nothing is fetched up front: a render
+      // asks for exactly the tables, font sizes and includes it reads
+      // (renderJustInTime) and runs again until it has them all.
+      const catalog = CATALOG;
+      for (const [name, parts] of Object.entries(catalog.music)) declareMusicFont(name, parts);
+      for (const name of catalog.text) declareTextFont(name);
+      const pending = new Map();
+      let nextAsset = 0;
+      const asset = (path, binary) => new Promise((resolve, reject) => {
+        const request = ++nextAsset;
+        pending.set(request, { resolve, reject });
+        self.postMessage({ type: 'asset', request, path, binary });
       });
-      const ready = loadRendererData(readFile)
-        .then(() => withPinnedEmmentalerMetrics(parseSvgFontManifest(font)));
+      const fontPart = (name, part) => Promise.all([
+        asset('fonts/' + name + '/' + name + '-' + part + '.svg', false),
+        asset('fonts/' + name + '/' + name + '-' + part + '.otf', true),
+      ]).then(([svg, otf]) => ({ svg, otf: new Uint8Array(otf) }));
+      const loader = {
+        rendererData: (file) => asset('data/' + file, false).then(JSON.parse),
+        musicFontPart: fontPart,
+        textFont: (name) => {
+          const owner = Object.keys(catalog.music).find((family) => name.startsWith(family)) ?? name;
+          return asset('fonts/' + owner + '/' + name + '.otf', true).then((bytes) => new Uint8Array(bytes));
+        },
+      };
+      // Stylesheets a score may \\include (e.g. lilyjazz.ily), loaded the same way.
+      const includes = new Map();
+      const missingIncludes = new Set();
+      const includeResolver = (name) => {
+        const base = name.replace(/^.*\\//, '');
+        if (includes.has(base)) return { file: base, source: includes.get(base) };
+        if (catalog.includes[base]) missingIncludes.add(base);
+        return undefined;
+      };
+      const fontManifest = lazyPinnedEmmentalerManifest(font);
+      // Every parse reads the grob defaults, and a score that selects no other
+      // music font draws Emmentaler: fetch those with the request rather than
+      // discovering each in a render of its own. Everything else is on demand.
+      const OTHER_MUSIC_FONT = /#:music\\s+"(?!emmentaler")/;
+      const justInTime = async (run, source, engraves) => {
+        for (;;) {
+          missingIncludes.clear();
+          const text = [source, ...includes.values()].join('\\n');
+          await loadRendererDataTables(['nativeGrobDefaults',
+            ...(engraves && !OTHER_MUSIC_FONT.test(text) ? EMMENTALER_GLYPH_TABLES : [])], loader);
+          const { value } = await renderJustInTime(run, loader);
+          if (!missingIncludes.size) return value;
+          await Promise.all([...missingIncludes].map(async (base) =>
+            includes.set(base, await asset(catalog.includes[base], false))));
+        }
+      };
       const SYSTEM_GROUP = /data-system-id="(system-\\d+)" transform="translate\\(([-\\d.e]+) ([-\\d.e]+)\\)"/g;
       // Page-space boxes of every printed element that LilyPond's point-and-click
       // links to a music event (notes, rests, articulations, dynamics, slurs, ...),
@@ -143,7 +258,7 @@ await build({
       const performScore = (source) => {
         const notes = [], cues = [];
         let start = 0;
-        for (const input of iterateSourcePerformances(source, { file: 'score.ly' })) {
+        for (const input of iterateSourcePerformances(source, { file: 'score.ly', includeResolver })) {
           const performance = performSourceMusic(input);
           const seconds = midiClock(performance);
           let end = 0;
@@ -183,26 +298,24 @@ await build({
         return { notes, cues, duration: Math.max(0, start - 1) };
       };
       self.onmessage = async ({ data }) => {
-        if (data.type === 'data') {
-          const file = files.get(data.name);
-          files.delete(data.name);
+        if (data.type === 'asset') {
+          const file = pending.get(data.request);
+          pending.delete(data.request);
           if (data.error) file?.reject(new Error(data.error));
-          else file?.resolve(JSON.parse(data.text));
+          else file?.resolve(data.content);
           return;
         }
         const { id, source } = data;
         if (data.type === 'perform') {
           try {
-            await ready;
-            self.postMessage({ id, performance: performScore(source) });
+            self.postMessage({ id, performance: await justInTime(() => performScore(source), source, false) });
           } catch (error) {
             self.postMessage({ id, error: error instanceof Error ? error.message : String(error), position: position(errorSpan(error)) });
           }
           return;
         }
         try {
-          const fontManifest = await ready;
-          const result = renderLySourceToSvg(source, { file: 'score.ly', fontManifest });
+          const result = await justInTime(() => renderLySourceToSvg(source, { file: 'score.ly', fontManifest, includeResolver }), source, true);
           const failures = result.diagnostics.filter(d => d.severity === 'error');
           const errors = failures.map(d => d.message);
           const positions = failures.map(d => position(d.span));
@@ -226,6 +339,7 @@ await build({
   sourcemap: debug ? 'linked' : false,
   legalComments: 'eof',
   loader: { '.svg': 'text' },
+  define: { CATALOG: JSON.stringify(catalog) },
 })
 await writeFile(
   'public/renderer/version.json',

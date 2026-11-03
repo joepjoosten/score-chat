@@ -826,21 +826,70 @@ test('renderer data is downloaded once, even when renders are cancelled', async 
   await page.getByRole('tab', { name: 'Sheet music', exact: true }).click()
   await expect(page.locator('.sheet-page:not(.stale)')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Fourth' })).toBeVisible()
-  expect(downloads.size).toBe(7)
+  // Tables load just in time: a single-staff score never reads the piano brace outlines.
+  expect(
+    [...downloads.keys()].some((path) =>
+      path.endsWith('/optical-masters.json'),
+    ),
+  ).toBe(true)
+  expect(
+    [...downloads.keys()].some((path) => path.endsWith('/brace-glyphs.json')),
+  ).toBe(false)
+  expect(downloads.size).toBeLessThan(7)
   expect([...downloads.values()].every((count) => count === 1)).toBe(true)
 })
 
-test('a fresh visit opens the alto saxophone compendium', async ({ page }) => {
-  test.slow()
+test('the jazz fonts load only when a score selects them, and only the parts it uses', async ({
+  page,
+}) => {
+  const downloads: string[] = []
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname
+    if (path.includes('/renderer/fonts/'))
+      downloads.push(path.replace(/^.*\/renderer\/fonts\//, ''))
+  })
+  await page.goto('./')
+  await expect(page.locator('.sheet-page:not(.stale)')).toBeVisible()
+  expect(downloads).toEqual([])
+  await page.getByRole('tab', { name: 'LilyPond', exact: true }).click()
+  await page.getByLabel('LilyPond source').fill(String.raw`\version "2.24.4"
+\include "jazzchords.ily"
+\include "lilyjazz.ily"
+\header { title = "Jazz Fonts" }
+<<
+  \new ChordNames \chordmode { c1:m7 f:7 }
+  \new Staff \relative c'' { c4 d8 es f4 g | a2 r }
+>>`)
+  await page.getByRole('tab', { name: 'Sheet music', exact: true }).click()
+  await expect(page.locator('.sheet-page:not(.stale)')).toBeVisible()
+  await expect(page.getByText('1 page · rendered locally')).toBeVisible()
+  expect(downloads).toContain('lilyjazz/stylesheet/lilyjazz.ily')
+  expect(downloads).toContain('lilyjazz/lilyjazz-20.otf')
+  expect(downloads).toContain('lilyjazz/lilyjazz-chord.otf')
+  expect(downloads).toContain('lilyjazz/lilyjazz-text.otf')
+  // No piano brace and no unused optical sizes.
+  expect(downloads).not.toContain('lilyjazz/lilyjazz-brace.otf')
+  expect(downloads).not.toContain('lilyjazz/lilyjazz-26.otf')
+  expect(new Set(downloads).size).toBe(downloads.length)
+})
+
+test('a fresh visit opens the LilyJAZZ lead sheet', async ({ page }) => {
+  const downloads: string[] = []
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname
+    if (path.includes('/renderer/fonts/'))
+      downloads.push(path.split('/renderer/fonts/')[1]!)
+  })
   await page.addInitScript((key) => localStorage.removeItem(key), SCORE_KEY)
   await page.goto('./')
-  await expect(page.getByText('6 pages · rendered locally')).toBeVisible({
+  await expect(page.getByText('1 page · rendered locally')).toBeVisible({
     timeout: COMPENDIUM_RENDER,
   })
+  expect(downloads).toContain('lilyjazz/lilyjazz-20.otf')
   await page.getByRole('tab', { name: 'LilyPond', exact: true }).click()
   await expect
     .poll(() => sourceOf(page.getByLabel('LilyPond source')))
-    .toMatch(/title = "The Complete Alto Saxophone"/)
+    .toMatch(/title = "Late Light"/)
 })
 
 test('playback lights up the sounding note heads, pauses, and rewinds', async ({
@@ -864,7 +913,14 @@ test('playback lights up the sounding note heads, pauses, and rewinds', async ({
 test('shows one page at a time, two when they fit, and turns pages', async ({
   page,
 }) => {
-  await page.addInitScript((key) => localStorage.removeItem(key), SCORE_KEY)
+  // Six pages, one bar each.
+  const sixPages = String.raw`\version "2.24.4"
+{ c'1 \pageBreak d'1 \pageBreak e'1 \pageBreak f'1 \pageBreak g'1 \pageBreak a'1 }
+`
+  await page.addInitScript(
+    ([key, score]) => localStorage.setItem(key, score),
+    [SCORE_KEY, sixPages],
+  )
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.goto('./')
   const label = page.locator('.page-label')

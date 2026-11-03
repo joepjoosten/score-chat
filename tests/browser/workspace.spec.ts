@@ -873,17 +873,23 @@ test('the jazz fonts load only when a score selects them, and only the parts it 
   expect(new Set(downloads).size).toBe(downloads.length)
 })
 
-test('a fresh visit opens the alto saxophone compendium', async ({ page }) => {
-  test.slow()
+test('a fresh visit opens the LilyJAZZ lead sheet', async ({ page }) => {
+  const downloads: string[] = []
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname
+    if (path.includes('/renderer/fonts/'))
+      downloads.push(path.split('/renderer/fonts/')[1]!)
+  })
   await page.addInitScript((key) => localStorage.removeItem(key), SCORE_KEY)
   await page.goto('./')
-  await expect(page.getByText('6 pages · rendered locally')).toBeVisible({
+  await expect(page.getByText('1 page · rendered locally')).toBeVisible({
     timeout: COMPENDIUM_RENDER,
   })
+  expect(downloads).toContain('lilyjazz/lilyjazz-20.otf')
   await page.getByRole('tab', { name: 'LilyPond', exact: true }).click()
   await expect
     .poll(() => sourceOf(page.getByLabel('LilyPond source')))
-    .toMatch(/title = "The Complete Alto Saxophone"/)
+    .toMatch(/title = "Late Light"/)
 })
 
 test('playback lights up the sounding note heads, pauses, and rewinds', async ({

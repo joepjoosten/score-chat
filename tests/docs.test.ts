@@ -6,8 +6,8 @@ import {
   readDoc,
   searchDocs,
   tokenize,
-} from '../src/harness/docs.ts'
-import type { Doc } from '../src/harness/docs.ts'
+} from '../shared/docs.ts'
+import type { Doc } from '../shared/docs.ts'
 
 const doc = (id: string, fields: Partial<Doc>): Doc => ({
   id,

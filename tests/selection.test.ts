@@ -8,8 +8,8 @@ import {
   markerStrokes,
   selectedNotes,
   summarizeSelection,
-} from '../src/selection.ts'
-import type { Anchor } from '../src/selection.ts'
+} from '../shared/selection.ts'
+import type { Anchor } from '../shared/selection.ts'
 
 const note = (
   line: number,

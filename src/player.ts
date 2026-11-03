@@ -1,8 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
-import { performScore } from './renderer'
-import type { SourcePosition } from './renderer'
-import type { Performance, PlayedNote } from './renderer'
-import { anchorKey } from './selection'
+import { performScore } from './renderer.ts'
+import type { Performance, PlayedNote, SourcePosition } from './renderer.ts'
+import { anchorKey } from '../shared/selection.ts'
 
 /** Seconds of music scheduled ahead of the audio clock. */
 const LOOKAHEAD = 0.3
@@ -130,98 +128,67 @@ export class Player {
   }
 }
 
-export type PlaybackState = 'stopped' | 'loading' | 'playing' | 'paused'
-const NOTHING: ReadonlySet<string> = new Set()
+// The page plays one score at a time; Commands drive it, the Model only
+// mirrors its state.
+let current: Player | undefined
+let loading: AbortController | undefined
+
+export type StartResult =
+  { ok: true } | { ok: false; error: string; position: SourcePosition | null }
 
 /**
- * Play, pause and stop for a score, plus the source positions (anchor keys)
- * of the notes sounding right now. The score is performed on the first play;
- * a new source discards the performance.
+ * Plays the score, performing it first unless it was already performed and
+ * only paused. Audio starts inside the click, as browsers require.
  */
-export function usePlayback(source: string) {
-  const [state, setState] = useState<PlaybackState>('stopped')
-  const [error, setError] = useState('')
-  const [errorPosition, setErrorPosition] = useState<SourcePosition | null>(
-    null,
-  )
-  const [sounding, setSounding] = useState<ReadonlySet<string>>(NOTHING)
-  const player = useRef<Player | null>(null)
-  const loading = useRef<AbortController | null>(null)
-
-  useEffect(
-    () => () => {
-      loading.current?.abort()
-      player.current?.stop()
-      player.current = null
-      setState('stopped')
-      setSounding(NOTHING)
-      setError('')
-      setErrorPosition(null)
-    },
-    [source],
-  )
-
-  useEffect(() => {
-    const current = player.current
-    if (state !== 'playing' || !current) return
-    let frame = 0
-    let last = ''
-    const follow = () => {
-      const position = current.position
-      const keys = current.performance.cues
-        .filter((cue) => cue.time <= position && position < cue.end)
-        .map(anchorKey)
-      const id = keys.join()
-      if (id !== last) {
-        last = id
-        setSounding(new Set(keys))
+export async function play(source: string): Promise<StartResult> {
+  void audioContext().resume()
+  if (!current) {
+    loading?.abort()
+    const controller = new AbortController()
+    loading = controller
+    const result = await performScore(source, controller.signal).catch(
+      () => undefined,
+    )
+    if (controller.signal.aborted)
+      return { ok: false, error: '', position: null }
+    loading = undefined
+    if (!result?.performance)
+      return {
+        ok: false,
+        error: result?.error ?? 'The score could not be performed.',
+        position: result?.position ?? null,
       }
-      frame = requestAnimationFrame(follow)
-    }
-    frame = requestAnimationFrame(follow)
-    return () => cancelAnimationFrame(frame)
-  }, [state])
-
-  async function toggle() {
-    if (state === 'loading') return
-    if (state === 'playing') {
-      player.current?.pause()
-      setState('paused')
-      return
-    }
-    // Start audio inside the click; browsers block it after an await.
-    void audioContext().resume()
-    if (!player.current) {
-      const controller = new AbortController()
-      loading.current = controller
-      setState('loading')
-      setError('')
-      setErrorPosition(null)
-      const result = await performScore(source, controller.signal).catch(
-        () => undefined,
-      )
-      if (controller.signal.aborted) return
-      if (!result?.performance) {
-        setError(result?.error ?? 'The score could not be performed.')
-        setErrorPosition(result?.position ?? null)
-        setState('stopped')
-        return
-      }
-      player.current = new Player(result.performance, () => {
-        setState('stopped')
-        setSounding(NOTHING)
-      })
-    }
-    player.current.play()
-    setState('playing')
+    // At the end it stops by itself and keeps the performance for the next play.
+    current = new Player(result.performance, () => {})
   }
+  current.play()
+  return { ok: true }
+}
 
-  function stop() {
-    loading.current?.abort()
-    player.current?.stop()
-    setState('stopped')
-    setSounding(NOTHING)
-  }
+export const isPlaying = () => current?.playing ?? false
 
-  return { state, error, errorPosition, sounding, toggle, stop }
+export function pause() {
+  current?.pause()
+}
+
+/** Stops and rewinds; the performance is kept for the next play. */
+export function rewind() {
+  loading?.abort()
+  loading = undefined
+  current?.stop()
+}
+
+/** Forgets the performance, e.g. because the score changed. */
+export function discard() {
+  rewind()
+  current = undefined
+}
+
+/** Anchor keys of the notes sounding right now. */
+export function soundingKeys(): string[] {
+  if (!current?.playing) return []
+  const position = current.position
+  return current.performance.cues
+    .filter((cue) => cue.time <= position && position < cue.end)
+    .map(anchorKey)
 }

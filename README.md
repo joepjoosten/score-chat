@@ -1,49 +1,91 @@
 # Score Chat
 
-A static React + TypeScript workspace for editing LilyPond, viewing SVG sheet music, and chatting with a music agent. Effect, Effect Atom React, and the Effect OpenRouter provider are pinned to the **4.0.1** release. Effect v4 provides the atom, AI and HTTP modules as `effect/reactivity`, `effect/ai` and `effect/http`.
+A workspace for editing LilyPond, viewing SVG sheet music, and chatting with a music agent. The client is a [Foldkit](https://foldkit.dev) app (Elm architecture on Effect), and sheet music renders in the browser. The agent runs on Cloudflare: one Durable Object per document runs it, keeps its own SQLite database, and streams to the browser over a resumable WebSocket. [Alchemy](https://alchemy.run) defines and deploys all of it. Effect, Foldkit's peer range and the Effect OpenRouter provider are pinned to **4.1**.
 
 ## Run locally
 
-Requires Node.js 22.12+.
+Requires Node.js 22.19+.
 
 ```sh
 npm ci
-npm run dev
+cp .env.example .env   # then set KEY_ENCRYPTION_SECRET (openssl rand -base64 32)
+npm run dev            # alchemy dev: http://localhost:1337
 ```
 
-Open **Settings**, enter an OpenRouter API key and a model ID with tool-calling support, then save. `openrouter/auto` is the default. No API key is needed to edit, import, render, or export music.
+`alchemy dev` runs the Worker, the Durable Objects, D1 and Vite with live reload locally in workerd. It needs no Cloudflare account and keeps its state in `.alchemy/`. Sign-in emails aren't sent locally: the link is printed in the dev log and written to `.alchemy/local/email/`.
 
-- Switch between **Sheet music** and **LilyPond**; edits render automatically. The score fills the window below a single toolbar.
-- The sheet music shows one page at a time, or two side by side when both fit at the current zoom. Turn pages with the arrows in the toolbar or the arrow and Page Up/Down keys; playback turns them along with the music.
-- The assistant lives in a floating panel that always stays above the score. Click its header (or press Escape in the composer) to collapse it to just the message box; sending a message reopens it. Drag the header to move the panel to another corner (remembered). **Hide** tucks it away behind a small handle while it keeps working; the handle spins while the assistant works and shows a dot when there is something new.
-- The **LilyPond** tab is a CodeMirror editor with LilyPond highlighting (commands, notes and durations, strings, comments, Scheme). Typing `\` suggests the commands Score Chat's renderer supports, each with the documentation section that describes it, along with the variables defined in the score; after `\new`, `\context` or `\clef` it suggests the supported context and clef names. Render and playback errors are underlined where they occur; each error above the score shows its line and column, and clicking it selects that spot in the source. Standard shortcuts apply, including undo, find (Cmd/Ctrl+F) and Tab to indent.
-- Open a `.ly` file or download the current source.
-- Ask the assistant to explain or edit music. Its Effect AI tools search, read (by line range), validate, and edit the score in the browser; targeted changes are sent as exact text replacements instead of a full rewrite, and the score is no longer embedded in the prompt. Invalid edits are rejected and returned to the model as diagnostics. The assistant keeps working until it is done; **Stop** ends the turn immediately.
-- The assistant can look things up in the bundled LilyPond 2.24.4 documentation (Notation Reference, snippets and Music Glossary) with full-text search. Every example in it is marked by whether Score Chat's renderer supports it.
-- When the model exposes its reasoning, the latest ten lines stream into the chat while it thinks, then fold away; expand **Thought process** to read it all. Drag the assistant's inner corner to resize it (double-click to reset); the size is remembered.
-- Use the **highlighter** in the toolbar to swipe a felt-tip marker over the sheet music: notes, rests, articulations, dynamics, slurs, ties, hairpins, tuplets, key and time signatures, lyrics, chord names, text and more. Each highlighted element is attached to your next message as the source line and column range of the music event that produced it, together with its kind and the full source line, so "make this louder" or "remove this slur" applies to exactly those elements. Large elements such as slurs and hairpins are picked up when the swipe covers their centre; a tap picks the smallest element under the marker. Swipe again to add more, tap a highlighted element to lift the marker, and clear all from the chip above the composer. Any change to the score clears the highlight.
-- **Play** performs the score with the renderer's MIDI generator and plays it on a small built-in Web Audio synth (percussion is silent). The note heads that are sounding light up on the page, which scrolls along. Pause keeps the position; **Back to the start** rewinds. A score without a `\midi` block is played as if it had an empty one.
-- Undo and redo step through up to 20 score replacements made by the agent or file imports during the current session. Editing the source by hand discards the redo history.
-- Settings has a **Thinking** option: leave it on the model default, turn thinking off, or turn it on with an effort level from minimal to maximum. It's sent to OpenRouter as the reasoning effort; models without reasoning support ignore it.
-- Settings has a **Sheet music pages** option: pages are shown as images by default; choose **Inline SVG** to put the rendered markup in the document so systems and glyphs can be inspected with browser developer tools (scripts, embedded HTML, and non-web links are stripped first).
-- Settings (including your API key), selected view, and current score persist in local storage. Chat and undo history are session-only. Storage failures are shown in the UI.
+No account is needed to edit, import, render, play or export music. Those scores stay in the browser. Signing in adds the assistant. It also keeps your scores in your account, available on any device; any scores already in the browser move there. To use the assistant, open **Settings**, enter an OpenRouter API key and a model ID with tool-calling support (`openrouter/auto` is the default), and save.
 
-## Client-side architecture
+- **Documents.** The documents button next to the title lists your scores: create, open or delete them. Each has its own address (`/d/<id>`) and its own conversation.
+- **Views.** Switch between **Sheet music** and **LilyPond**; edits render automatically. The score fills the window below a single toolbar.
+- **Pages.** The sheet music shows one page at a time, or two side by side when both fit at the current zoom. Turn pages with the arrows in the toolbar or the arrow and Page Up/Down keys; playback turns them along with the music.
+- **Assistant panel.** The assistant lives in a floating panel that always stays above the score.
+  - Click its header (or press Escape in the composer) to collapse it to just the message box; sending a message reopens it.
+  - Drag the header to move the panel to another corner (remembered).
+  - **Hide** tucks it away behind a small handle. The handle spins while the assistant works and shows a dot when there is something new.
+- **LilyPond editor.** The **LilyPond** tab is a CodeMirror editor with LilyPond highlighting (commands, notes and durations, strings, comments, Scheme).
+  - Typing `\` suggests the commands Score Chat's renderer supports, each with the documentation section that describes it, along with the variables defined in the score. After `\new`, `\context` or `\clef` it suggests the supported context and clef names.
+  - Render and playback errors are underlined where they occur. Each error above the score shows its line and column; clicking it selects that spot in the source.
+  - Standard shortcuts apply, including undo, find (Cmd/Ctrl+F) and Tab to indent.
+- **Files.** Open a `.ly` file (or drop one anywhere on the page), or download the current source.
+- **Editing with the assistant.** Ask the assistant to explain or edit music.
+  - Its Effect AI tools search, read (by line range), check and edit the document on the server.
+  - Targeted changes are exact text replacements rather than a full rewrite.
+  - Each edit is checked with the renderer's parser and music interpretation before it is applied. An open browser then engraves it, and an edit it cannot engrave is taken back; the model gets the diagnostics either way.
+  - **Stop** ends the turn.
+- **It keeps working without you.** The turn belongs to the document, not the page. Close the tab or lose the connection and it carries on; when you come back, the browser replays only the events it missed.
+- **Documentation lookups.** The assistant can look things up in the bundled LilyPond 2.24.4 documentation (Notation Reference, snippets and Music Glossary) with full-text search. Every example in it is marked by whether Score Chat's renderer supports it.
+- **Thinking.** When the model exposes its reasoning, the latest ten lines stream into the chat while it thinks, then fold away; expand **Thought process** to read it all. Drag the assistant's inner corner to resize it (double-click to reset); the size is remembered.
+- **Highlighter.** The **highlighter** in the toolbar swipes a felt-tip marker over the sheet music: notes, rests, articulations, dynamics, slurs, ties, hairpins, tuplets, key and time signatures, lyrics, chord names, text and more.
+  - Each highlighted element is attached to your next message as the source line and column range of the music event that produced it, with its kind and the full source line. So "make this louder" or "remove this slur" applies to exactly those elements.
+  - Large elements such as slurs and hairpins are picked up when the swipe covers their centre; a tap picks the smallest element under the marker.
+  - Swipe again to add more, tap a highlighted element to lift the marker, and clear all from the chip above the composer. Any change to the score clears the highlight.
+- **Playback.** **Play** performs the score with the renderer's MIDI generator on a small built-in Web Audio synth (percussion is silent). The note heads that are sounding light up on the page, which scrolls along. Pause keeps the position; **Back to the start** rewinds. A score without a `\midi` block is played as if it had an empty one.
+- **Undo and redo** step through up to 20 score replacements made by the agent or file imports during the current session. Editing the source by hand discards the redo history.
+- **Settings.**
+  - **Thinking:** leave it on the model default, turn thinking off, or turn it on with an effort level from minimal to maximum. It is sent to OpenRouter as the reasoning effort; models without reasoning support ignore it.
+  - **Sheet music pages:** pages show as images by default. **Inline SVG** puts the rendered markup in the document so you can inspect systems and glyphs with browser developer tools (scripts, embedded HTML and non-web links are stripped first).
+  - The view, the page mode and the assistant's corner and size are kept in this browser. The model, thinking setting and API key belong to your account.
 
-Vite emits only static files into `dist/`. There is no backend, server function, or runtime package installation. Asset paths are relative, so the same build works at a domain root or a GitHub Pages repository path. This app does not use history routing or require rewrite rules.
+## Architecture
 
-The LilyPond compiler runs in a dedicated Web Worker, with a 20-second timeout and a source-size limit. Alongside each page's SVG, the worker reports the page-space box of every printed element that the renderer's LilyPond point-and-click links to a music event, together with that event's source span and the grob kind (from the system placements); the app draws highlights on a transparent overlay from that data. SVGs are displayed as images by default; the optional inline mode sanitizes the markup (`src/svg.ts`) before injecting it. The music font is bundled; rendering makes no external requests. Renderer data, the optional LilyJAZZ fonts and their stylesheets load just in time: the worker renders, fetches from this site exactly the tables, font sizes and `\include`d stylesheets that render read, and renders again, so a score only downloads what it uses. A score selects the jazz look with `\include "lilyjazz.ily"` and, for chord symbols, `\include "jazzchords.ily"`. The renderer supports a subset of LilyPond **2.24.4**, not all GNU LilyPond features, and reports unsupported syntax as diagnostics with their source line and column, which the worker passes on with each error (and to the assistant when it validates an edit).
+```
+src/      the Foldkit client: Model, Messages, update, view, Commands, Subscriptions
+shared/   code both sides run: the protocol schemas, score text tools, docs search, selections
+server/   the Worker, the DocumentAgent Durable Object, accounts, the agent and its tools
+migrations/  D1 schema        alchemy.run.ts  the stack: Worker, Durable Objects, D1, email
+```
 
-The agent loop runs locally, but **model inference happens through OpenRouter**, not on your computer. Sending a message shares the current score and conversation with OpenRouter and the selected provider. Your API key is sent in the authorization header to OpenRouter; it is never included in the build, prompt, or displayed errors. Browser local storage is not an encrypted secret store; use a limited-spend key and avoid shared devices. Clearing the key in Settings and saving removes it from the stored settings.
+**Client.** `src/main.ts` assembles the program, and Foldkit runs it:
 
-- `src/state.ts`: Effect Atom state and validated local-storage settings.
-- `src/renderer.ts`: cancellable browser worker requests.
-- `src/harness/`: the agent harness, loaded when chat starts — `agent.ts` runs the model loop through OpenRouter, `tools.ts` defines the score tools, `prompt.ts` builds the system prompt and history, `scoreText.ts` holds the pure read, search and edit helpers, and `docs.ts` searches the bundled documentation (BM25 over titles, index entries and text) once `public/docs/lilypond-docs.json` is fetched on first use.
-- `src/player.ts`: playback; schedules the worker's MIDI notes on Web Audio and tracks which source events are sounding.
-- `src/midi.ts`: adds `\midi { }` to scores written for print only, without moving earlier source positions.
-- `src/selection.ts`: maps marker swipes over the rendered page to notes in the source and describes them to the model.
-- `src/SourceEditor.tsx` and `src/lilypondLanguage.ts`: the CodeMirror source editor, loaded with the LilyPond tab, and its highlighter and completions. `src/sourceErrors.ts` turns error positions into editor marks, falling back to the command an error names when it has no position.
-- `src/App.tsx`: SVG preview, toolbar, settings, and conversation.
+- `src/model.ts`: one Schema-defined Model.
+- `src/message.ts`: fact-named Messages.
+- `src/update.ts`: how each Message changes the Model and which Commands follow.
+- `src/view.ts`: the view.
+- `src/commands.ts`: side effects.
+- `src/subscriptions.ts`: window events, playback frames and socket events.
+- `src/socket.ts`: the document WebSocket as a Managed Resource that reconnects.
+- `src/editor.ts` and `src/mounts.ts`: CodeMirror (loaded with the first visit to the LilyPond tab), the marker overlay and measurements, handed to Foldkit through Mounts.
+
+The renderer (`src/renderer.ts`, `public/renderer/worker.js`) runs in a Web Worker, as before. It has a 20-second timeout and a source-size limit, loads renderer data, fonts and stylesheets just in time, and reports each printed element's page box and source span for the highlighter. `src/player.ts` schedules its MIDI on Web Audio.
+
+**Server.** `server/worker.ts` is a plain Worker module:
+
+- It serves the client build as static assets; client routes such as `/d/<id>` fall back to `index.html`.
+- It answers the `/api` routes with Effect's `HttpRouter`: sign-in, settings, the document list.
+- It forwards each document's WebSocket to that document's `DocumentAgent` (`server/DocumentAgent.ts`) after checking the session and ownership.
+
+State-changing requests and sockets must come from the site's own origin.
+
+- **Accounts (D1).** Users, single-use sign-in links (15 minutes), sessions (30 days, `HttpOnly` cookie) and the document index live in D1 (`server/accounts.ts`). Only SHA-256 hashes of link and session tokens are stored. OpenRouter keys are encrypted with AES-GCM under `KEY_ENCRYPTION_SECRET`, bound to their owner, and never returned to the browser.
+- **Documents (Durable Objects).** Each `DocumentAgent` keeps its document in its own SQLite storage: the score and its revision, the conversation, the runs and a numbered event log.
+- **Runs.** A turn runs as an Effect fiber in the object (`server/agent.ts`, `server/tools.ts`). It decrypts the user's key, calls OpenRouter through `@effect/ai-openrouter`, executes the tools and records every change as an event.
+  - Streamed text and thinking are batched every 100 ms, so a slow connection gets fewer, larger frames.
+  - After every step the run saves a checkpoint, and an alarm every 15 seconds keeps it alive. If the object restarts (for example during a deploy), the run resumes from its last checkpoint.
+- **Checking edits.** Edits are checked server-side with `server/renderer/check.js`, the renderer's parser and music interpretation without engraving or layout. It reads its data tables and stylesheets from the static assets.
+- **Connections.** Browsers connect over hibernatable WebSockets. `Hello { since }` replays the events after `since`, or sends a snapshot when the browser has nothing or has fallen too far behind (the last 4,000 events are kept). The protocol is in `shared/protocol.ts`.
+
+**Privacy.** Music renders on your computer. Sending a message shares the conversation and the current score with OpenRouter and your selected model provider. The score and conversation are stored in your document's Durable Object.
 
 ## Update the LilyPond renderer
 
@@ -63,7 +105,7 @@ To refresh the LilyJAZZ fonts and stylesheets in `public/renderer/fonts/lilyjazz
 
 For profiling or debugging locally, `npm run renderer:sync -- --debug` writes an unminified worker with a source map instead; sync again without it before committing.
 
-Commit the updated worker and version metadata together. The sync command requires a clean source checkout and does not change it. It bundles the same `renderLySourceToSvg` and `parseSvgFontManifest` entry points used by that project's browser playground. The bundle is public when the app is deployed.
+The sync also writes `server/renderer/check.js`, the server's check: the same parser and music interpretation, bundled from the same commit without engraving or layout. Commit the updated worker, the check and the version metadata together. The sync command requires a clean source checkout and does not change it. It bundles the same `renderLySourceToSvg` and `parseSvgFontManifest` entry points used by that project's browser playground. The bundle is public when the app is deployed.
 
 ## Update the LilyPond documentation
 
@@ -81,18 +123,32 @@ It also writes `public/docs/lilypond-commands.json`, the editor's completions: t
 
 ```sh
 npm run format:check
-npm test
-npm run build
+npm test              # unit tests
+npm run build         # typecheck client and server, build the client
+npm run test:server   # the Worker, Durable Object and D1 under alchemy dev
 npx playwright install chromium
-npm run test:e2e
+npm run test:e2e      # the app in Chromium against alchemy dev
 ```
 
-Browser tests use the production build under `/score-chat/` and test local rendering, persistence, import recovery, mobile layout, and mocked OpenRouter authentication and tool execution. They do not make paid model requests. To check a real connection, configure your own key in Settings and send a message.
+The server and browser tests run the whole stack locally under `alchemy dev`, with a stand-in for OpenRouter (`tests/browser/openrouter.ts`). They sign in through real magic links, create documents, and run the agent over the document socket, including a dropped connection partway through a reply. They don't need a Cloudflare account and make no paid model requests.
 
 ## Deploy
 
-`.github/workflows/pages.yml` runs formatting, unit tests, a production build, and Chromium browser tests. Pushes to `main` deploy `dist/` using GitHub's Pages artifact workflow; pull requests run checks without deployment. You can also run the workflow manually.
+```sh
+npx alchemy profile edit --add Cloudflare   # once: log in to Cloudflare
+npm run deploy -- --stage prod
+```
 
-The repository's Pages source must be **GitHub Actions** (`build_type: workflow`). No deployment or OpenRouter secrets are required. For another static host, upload the contents of `dist/`.
+`alchemy deploy` builds the client and deploys the stack in `alchemy.run.ts`: the Worker with its static assets, the `DocumentAgent` Durable Object class (SQLite storage), the D1 database with `migrations/`, and the `send_email` binding. Deploys keep their state in Alchemy's state store on the Cloudflare account. Configuration comes from the environment or `.env`:
 
-References: [Effect OpenRouter provider](https://github.com/Effect-TS/effect/tree/main/packages/ai/openrouter), [OpenRouter API](https://openrouter.ai/docs/quickstart), [GitHub Pages workflows](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).
+- `KEY_ENCRYPTION_SECRET`: encrypts stored OpenRouter keys. Generate it once (`openssl rand -base64 32`) and back it up; without it, stored keys can't be decrypted and users have to enter them again.
+- `EMAIL_FROM`: the sender of sign-in links. Its domain must be onboarded to [Cloudflare Email Service](https://developers.cloudflare.com/email-service/) to send to any address. With the domain on Cloudflare, set `EMAIL_ZONE_ID` too and Alchemy onboards the sending domain.
+
+`.github/workflows/deploy.yml` runs formatting, unit tests, the build, and the server and browser tests on every push and pull request. Pushes to `main` then deploy the `prod` stage. It needs:
+
+- the secrets `CLOUDFLARE_API_TOKEN` and `KEY_ENCRYPTION_SECRET`;
+- the variables `CLOUDFLARE_ACCOUNT_ID`, `EMAIL_FROM` and optionally `EMAIL_ZONE_ID`.
+
+Run `npx alchemy state bootstrap` once beforehand: CI doesn't create the state store. The token needs Workers Scripts, D1, Durable Objects, Secrets Store and (with `EMAIL_ZONE_ID`) Email Sending and DNS permissions on the account.
+
+References: [Foldkit](https://foldkit.dev), [Effect](https://effect.website), [Alchemy](https://alchemy.run), [Durable Objects](https://developers.cloudflare.com/durable-objects/), [OpenRouter API](https://openrouter.ai/docs/quickstart).

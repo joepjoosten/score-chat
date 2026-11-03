@@ -6,3 +6,5 @@ dist/
 node_modules/
 playwright-report/
 test-results/
+server/renderer/check.js
+.alchemy/

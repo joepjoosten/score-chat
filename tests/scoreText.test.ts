@@ -1,8 +1,8 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { applyEdits, readLines, searchLines } from '../src/harness/scoreText.ts'
-import { appendChunk } from '../src/state.ts'
-import type { Message } from '../src/state.ts'
+import { applyEdits, readLines, searchLines } from '../shared/scoreText.ts'
+import { appendChunk } from '../shared/protocol.ts'
+import type { ChatMessage as Message } from '../shared/protocol.ts'
 
 const source = 'a b\nc d\ne f\nc g\nh'
 

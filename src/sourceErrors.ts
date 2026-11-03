@@ -1,12 +1,12 @@
-import type { SourcePosition } from './renderer'
+import type { SourcePosition } from './renderer.ts'
 
 export type SourceError = { from: number; to: number; message: string }
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-/** Drops the renderer's internal stage prefix (`V2 renderer parse: `). */
+/** Drops the renderer's internal stage prefix (`V2 renderer parse: `, `V2PipelineError: parse: `). */
 export const errorMessage = (message: string) =>
-  message.replace(/^V\d+ renderer [\w-]+:\s*/, '')
+  message.replace(/^(?:V\d+ renderer|V\d+PipelineError:) [\w-]+:\s*/, '')
 
 /** The offset of a 1-based line and UTF-16 column, clamped to the source. */
 export function offsetOf(source: string, line: number, column: number) {

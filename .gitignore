@@ -5,3 +5,6 @@ playwright-report/
 .env*
 .DS_Store
 public/renderer/worker.js.map
+.alchemy/
+server/renderer/check.js.map
+!.env.example

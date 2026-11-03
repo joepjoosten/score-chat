@@ -4,11 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
-    "preview": "vite preview",
-    "check": "tsc --noEmit",
+    "dev": "alchemy dev",
+    "build": "npm run check && vite build",
+    "check": "tsc -p tsconfig.json --noEmit && tsc -p server/tsconfig.json --noEmit",
+    "deploy": "alchemy deploy",
+    "destroy": "alchemy destroy",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "test:server": "node scripts/with-dev-server.mjs node --experimental-strip-types tests/server/agent.e2e.ts",
     "test:e2e": "playwright test",
     "renderer:sync": "node scripts/sync-renderer.mjs",
     "format": "prettier --write .",
@@ -23,28 +25,33 @@
     "@codemirror/search": "^6.7.2",
     "@codemirror/state": "^6.7.6",
     "@codemirror/view": "^6.43.14",
-    "@effect/ai-openrouter": "4.0.1",
-    "@effect/atom-react": "4.0.1",
+    "@effect/ai-openrouter": "~4.1.2",
+    "@effect/platform-browser": "~4.1.2",
+    "@effect/sql-d1": "~4.1.2",
+    "@effect/sql-sqlite-do": "~4.1.2",
     "@lezer/highlight": "^1.2.5",
-    "effect": "4.0.1",
-    "lucide-react": "^0.468.0",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1"
+    "effect": "~4.1.2",
+    "foldkit": "~0.170.0",
+    "lucide": "^1.67.0",
+    "mdast-util-from-markdown": "^2.1.0",
+    "mdast-util-gfm": "^3.1.0",
+    "micromark-extension-gfm": "^3.0.0"
   },
   "devDependencies": {
+    "@alchemy.run/cloudflare": "2.0.0-beta.85",
+    "@cloudflare/workers-types": "^5.20261103.1",
+    "@effect/platform-node": "~4.1.2",
+    "@foldkit/vite-plugin": "~0.29.0",
     "@playwright/test": "^1.56.0",
+    "@types/mdast": "^4.0.4",
     "@types/node": "^22.0.0",
-    "@types/react": "^19.2.0",
-    "@types/react-dom": "^19.2.0",
-    "@vitejs/plugin-react": "^5.0.0",
-    "esbuild": "^0.25.0",
+    "alchemy": "2.0.0-beta.85",
+    "esbuild": "^0.28.2",
     "prettier": "^3.6.0",
-    "typescript": "~5.9.3",
-    "vite": "^7.1.0"
+    "typescript": "~7.0.2",
+    "vite": "^8.3.5"
   },
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=22.19.0"
   }
 }

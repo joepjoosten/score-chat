@@ -1,20 +1,30 @@
 import { defineConfig, devices } from '@playwright/test'
 
+// The Worker, Durable Objects and D1 run locally under `alchemy dev`. The
+// agent reaches a stand-in for OpenRouter (tests/browser/openrouter.ts), so
+// no Cloudflare account or model costs are involved.
 export default defineConfig({
   testDir: './tests/browser',
+  globalSetup: './tests/browser/global-setup.ts',
   fullyParallel: true,
   retries: process.env.CI ? 1 : 0,
   // Engraving a page can take a few seconds on shared CI runners.
   expect: { timeout: 15_000 },
+  timeout: 60_000,
   use: {
-    baseURL: 'http://127.0.0.1:4173/score-chat/',
+    baseURL: 'http://localhost:1337/',
     trace: 'retain-on-failure',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
-    command:
-      'npm run preview -- --host 127.0.0.1 --port 4173 --base /score-chat/',
-    url: 'http://127.0.0.1:4173/score-chat/',
+    command: 'npx alchemy dev',
+    url: 'http://localhost:1337/',
+    timeout: 180_000,
     reuseExistingServer: !process.env.CI,
+    env: {
+      OPENROUTER_URL: 'http://127.0.0.1:8788/api/v1',
+      EMAIL_FROM: 'signin@example.com',
+      KEY_ENCRYPTION_SECRET: 'local-test-secret',
+    },
   },
 })

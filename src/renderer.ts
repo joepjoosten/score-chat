@@ -1,5 +1,6 @@
-import { withMidiOutput } from './midi'
-import type { Anchor } from './selection'
+import { withMidiOutput } from './midi.ts'
+import type { Anchor } from '../shared/selection.ts'
+import { MAX_SOURCE_LENGTH } from '../shared/protocol.ts'
 
 /** Where an error is in the score: 1-based lines, UTF-16 columns. */
 export interface SourcePosition {
@@ -16,7 +17,7 @@ export interface RenderResult {
   positions: (SourcePosition | null)[]
   anchors: Anchor[]
 }
-export const MAX_SOURCE_LENGTH = 150_000
+export { MAX_SOURCE_LENGTH }
 
 const rendererUrl = () =>
   new URL(`${import.meta.env.BASE_URL}renderer/`, document.baseURI)

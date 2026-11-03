@@ -1,3 +1,7 @@
+import type { SelectedNote } from './protocol.ts'
+
+export type { SelectedNote }
+
 /**
  * A printed element on a rendered page, mapped back to the source span of the
  * music event that caused it (the renderer's point-and-click link).
@@ -17,19 +21,6 @@ export interface Anchor {
   column: number
   endLine: number
   endColumn: number
-}
-
-/** A highlighted source event as attached to a chat message. */
-export interface SelectedNote {
-  text: string
-  line: number
-  column: number
-  endLine: number
-  endColumn: number
-  /** Readable kinds of the highlighted elements, e.g. `note` or `slur`. */
-  kinds?: string[]
-  /** The full source line the event starts on. */
-  context?: string
 }
 
 export interface Box {
@@ -196,7 +187,7 @@ export function selectedNotes(
   source: string,
 ): SelectedNote[] {
   const lines = source.split('\n')
-  const seen = new Map<string, SelectedNote>()
+  const seen = new Map<string, { kinds: string[] }>()
   const notes: SelectedNote[] = []
   for (const anchor of anchors) {
     const key = anchorKey(anchor)
@@ -204,7 +195,7 @@ export function selectedNotes(
     const kind = kindName(anchor.kind)
     const known = seen.get(key)
     if (known) {
-      if (!known.kinds!.includes(kind)) known.kinds!.push(kind)
+      if (!known.kinds.includes(kind)) known.kinds.push(kind)
       continue
     }
     const text =
@@ -214,7 +205,7 @@ export function selectedNotes(
             anchor.endColumn - 1,
           )
         : (lines[anchor.line - 1] ?? '').slice(anchor.column - 1)
-    const note: SelectedNote = {
+    const note = {
       text,
       line: anchor.line,
       column: anchor.column,

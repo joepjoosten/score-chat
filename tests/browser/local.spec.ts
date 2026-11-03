@@ -1,22 +1,20 @@
 import { test, expect } from '@playwright/test'
-import type { Locator, Page } from '@playwright/test'
 import { transformSync } from 'esbuild'
 import { readFileSync } from 'node:fs'
+import { sourceOf } from './helpers.ts'
 
-// Most tests exercise a one-page score; the app's default is the multi-page saxophone compendium.
+// Signed-out use: the score lives in this browser, and everything but the
+// assistant works without an account.
+
+// Most tests exercise a one-page score; the app's default is the LilyJAZZ lead sheet.
 const simpleScore = readFileSync(
   new URL('./simple-score.ly', import.meta.url),
   'utf8',
 )
+// The single score of earlier versions, which becomes the first local document.
 const SCORE_KEY = 'score-chat.score.v1'
-// The CodeMirror document behind the LilyPond source editor.
-const sourceOf = (editor: Locator) =>
-  editor.evaluate((content) =>
-    [...content.querySelectorAll('.cm-line')]
-      .map((line) => line.textContent)
-      .join('\n'),
-  )
-// The six-page default score takes far longer to render on CI runners.
+const DOCUMENTS_KEY = 'score-chat.documents.v1'
+// The default score takes far longer to render on CI runners.
 const COMPENDIUM_RENDER = 60_000
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(
@@ -29,53 +27,24 @@ test.beforeEach(async ({ page }) => {
   )
 })
 
-async function configure(page: Page) {
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
-  await page.getByLabel('OpenRouter API key').fill('test-key-only')
-  await page.getByLabel('Model', { exact: true }).fill('openai/test-model')
-  await page.getByRole('button', { name: 'Save settings' }).click()
-}
-
-// Builds a streamed chat completion (server-sent events) the way OpenRouter
-// sends it: one chunk per text delta or tool call, then the finish reason.
-function stream(
-  message: { reasoning?: string; content?: string; tool_calls?: object[] },
-  finish = 'stop',
-) {
-  const chunk = (delta: object, finish_reason: string | null = null) =>
-    `data: ${JSON.stringify({
-      id: 'test-completion',
-      model: 'openai/test-model',
-      object: 'chat.completion.chunk',
-      created: 1,
-      choices: [{ index: 0, delta, finish_reason, logprobs: null }],
-    })}\n\n`
-  const deltas = [
-    ...(message.reasoning ?? '')
-      .split(/(?<=\n)/)
-      .filter(Boolean)
-      .map((reasoning) => chunk({ role: 'assistant', reasoning })),
-    ...(message.content ?? '')
-      .split(/(?<= )/)
-      .map((content) => chunk({ role: 'assistant', content })),
-  ]
-  if (message.tool_calls)
-    deltas.push(chunk({ role: 'assistant', tool_calls: message.tool_calls }))
-  return {
-    status: 200,
-    contentType: 'text/event-stream',
-    body: deltas.join('') + chunk({}, finish) + 'data: [DONE]\n\n',
-  }
-}
+/** Waits until the debounced save has stored the edit in this browser. */
+const saved = (page: import('@playwright/test').Page, text: string) =>
+  expect
+    .poll(() =>
+      page.evaluate((key) => localStorage.getItem(key) ?? '', DOCUMENTS_KEY),
+    )
+    .toContain(text)
 
 test('renders locally, switches views, persists edits and preferences, and downloads', async ({
   page,
 }) => {
   const external: string[] = []
   page.on('request', (request) => {
+    const url = new URL(request.url())
+    // The app, and in development Vite's modules and live reload, come from the same host.
     if (
-      !request.url().startsWith('http://127.0.0.1:4173') &&
-      !request.url().startsWith('data:')
+      !['localhost', '127.0.0.1'].includes(url.hostname) &&
+      url.protocol !== 'data:'
     )
       external.push(request.url())
   })
@@ -86,25 +55,25 @@ test('renders locally, switches views, persists edits and preferences, and downl
     .poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth))
     .toBeGreaterThan(0)
   await expect(page.getByText('1 page · rendered locally')).toBeVisible()
+  // A local document gets its own address.
+  await expect(page).toHaveURL(/\/d\/local-/)
   await page.getByRole('tab', { name: 'LilyPond', exact: true }).click()
   const editor = page.getByLabel('LilyPond source')
   await editor.fill(
     (await sourceOf(editor)).replace('A little beginning', 'My first score'),
   )
+  await saved(page, 'My first score')
   await page.reload()
   await expect(editor).toContainText('My first score')
   await expect(
     page.getByRole('tab', { name: 'LilyPond', exact: true }),
   ).toHaveAttribute('aria-selected', 'true')
-  await configure(page)
-  await page.reload()
+  // Signed out, Settings has no assistant options; it offers to sign in instead.
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
-  await expect(page.getByLabel('OpenRouter API key')).toHaveValue(
-    'test-key-only',
-  )
-  await expect(page.getByLabel('Model', { exact: true })).toHaveValue(
-    'openai/test-model',
-  )
+  await expect(page.getByLabel('OpenRouter API key')).toHaveCount(0)
+  await expect(
+    page.getByRole('dialog').getByRole('button', { name: 'Sign in' }),
+  ).toBeVisible()
   await page.getByRole('button', { name: 'Close settings' }).click()
   const downloadEvent = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Download .ly' }).click()
@@ -162,213 +131,10 @@ test('opens a LilyPond file dropped anywhere on the page', async ({ page }) => {
   ).toBeEnabled()
 })
 
-test('agent executes a validated score edit through Effect AI and preserves tool results', async ({
-  page,
-}) => {
-  await page.goto('./')
-  await configure(page)
-  await page.getByRole('tab', { name: 'LilyPond', exact: true }).click()
-  const editor = page.getByLabel('LilyPond source')
-  const original = await sourceOf(editor)
-  const changed = original.replace('A little beginning', 'A playful beginning')
-  let calls = 0
-  await page.route(
-    'https://openrouter.ai/api/v1/chat/completions',
-    async (route) => {
-      const body = route.request().postDataJSON()
-      expect(route.request().headers().authorization).toBe(
-        'Bearer test-key-only',
-      )
-      expect(body.model).toBe('openai/test-model')
-      expect(
-        body.tools.map(
-          (tool: { function: { name: string } }) => tool.function.name,
-        ),
-      ).toContain('update_score')
-      calls++
-      if (calls === 1) {
-        // The score is fetched through tools rather than embedded in the prompt.
-        expect(body.messages[0].content[0].text).not.toContain(original)
-        await route.fulfill(
-          stream(
-            {
-              tool_calls: [
-                {
-                  index: 0,
-                  id: 'edit-1',
-                  type: 'function',
-                  function: {
-                    name: 'update_score',
-                    arguments: JSON.stringify({ source: changed }),
-                  },
-                },
-              ],
-            },
-            'tool_calls',
-          ),
-        )
-      } else {
-        expect(
-          body.messages.some(
-            (message: { role: string; content: string }) =>
-              message.role === 'tool' &&
-              message.content.includes('Applied successfully'),
-          ),
-        ).toBe(true)
-        await route.fulfill(
-          stream({
-            content:
-              'I updated the **score title**.\n\n- Old: `A little beginning`\n- New: `A playful beginning`',
-          }),
-        )
-      }
-    },
-  )
-  await page
-    .getByLabel('Message the music assistant')
-    .fill('Change the title to A playful beginning')
-  await page.getByRole('button', { name: 'Send message' }).click()
-  const reply = page.locator('.message.assistant')
-  await expect(reply).toContainText('I updated the score title.')
-  // Markdown is rendered rather than shown as raw text.
-  await expect(reply.locator('strong')).toHaveText('score title')
-  await expect(reply.locator('li code')).toHaveText([
-    'A little beginning',
-    'A playful beginning',
-  ])
-  await expect(reply).not.toContainText('**')
-  await expect.poll(() => sourceOf(editor)).toEqual(changed)
-  expect(calls).toBe(2)
-  await page
-    .getByRole('button', { name: 'Undo last score replacement' })
-    .click()
-  await expect.poll(() => sourceOf(editor)).toEqual(original)
-  const redo = page.getByRole('button', { name: 'Redo score replacement' })
-  await redo.click()
-  await expect.poll(() => sourceOf(editor)).toEqual(changed)
-  await page
-    .getByRole('button', { name: 'Undo last score replacement' })
-    .click()
-  await expect.poll(() => sourceOf(editor)).toEqual(original)
-  // Editing by hand after an undo discards the redo branch.
-  await editor.fill(original + '% edited\n')
-  await expect(redo).toBeDisabled()
-})
-
-test('highlighted notes reach the model as source positions and get edited', async ({
-  page,
-}) => {
-  await page.goto('./')
-  await configure(page)
-  const image = page.getByRole('img', { name: 'Sheet music, page 1' })
-  await expect(image).toBeVisible()
-  await expect(page.locator('.sheet-page:not(.stale)')).toBeVisible()
-  await page
-    .getByRole('button', { name: 'Highlight notes for the assistant' })
-    .click()
-  // Swipe across the first bar. The page viewBox is 119.5 x 169 units and the
-  // first system's note heads sit around y = 22, starting at x ≈ 23.
-  const box = (await image.boundingBox())!
-  const at = (x: number, y: number) => ({
-    x: box.x + (x / 119.5015) * box.width,
-    y: box.y + (y / 169.0093) * box.height,
-  })
-  const from = at(20, 19)
-  const to = at(45, 25)
-  await page.mouse.move(from.x, from.y)
-  await page.mouse.down()
-  await page.mouse.move(to.x, to.y, { steps: 6 })
-  await page.mouse.up()
-  const chip = page.locator('.selection-chip')
-  // The swipe also covers the time signature and the dynamic under the notes.
-  await expect(chip).toContainText(
-    '4 notes, 1 time signature, 1 dynamic highlighted',
-  )
-  await expect(chip).toContainText('\\time 4/4 c4 \\p e g e')
-  await expect(page.locator('.page-overlay .marker')).toHaveCount(1)
-  // Tapping a highlighted note lifts the marker from it again.
-  const tap = at(23.5, 23.2)
-  await page.mouse.click(tap.x, tap.y)
-  await expect(chip).toContainText(
-    '3 notes, 1 time signature, 1 dynamic highlighted',
-  )
-  await expect(chip).toContainText('\\time 4/4 \\p e g e')
-
-  let calls = 0
-  await page.route(
-    'https://openrouter.ai/api/v1/chat/completions',
-    async (route) => {
-      const body = route.request().postDataJSON()
-      calls++
-      if (calls === 1) {
-        const user = body.messages.findLast(
-          (message: { role: string }) => message.role === 'user',
-        )
-        const text = JSON.stringify(user.content)
-        expect(text).toContain('Add staccato')
-        expect(text).toContain(
-          'highlighted 3 notes, 1 time signature, 1 dynamic',
-        )
-        expect(text).toContain('Line 14: `    c4\\\\p e g e | f4 a g2 |`')
-        expect(text).toContain('line 14, columns 7-8 (dynamic): `\\\\p`')
-        expect(text).toContain('line 14, columns 10-10 (note): `e`')
-        expect(text).toContain('line 14, columns 12-12 (note): `g`')
-        expect(text).toContain('line 14, columns 14-14 (note): `e`')
-        expect(text).not.toContain('`c4`')
-        await route.fulfill(
-          stream(
-            {
-              tool_calls: [
-                {
-                  index: 0,
-                  id: 'edit-1',
-                  type: 'function',
-                  function: {
-                    name: 'edit_score',
-                    arguments: JSON.stringify({
-                      edits: [
-                        {
-                          old_text: 'c4\\p e g e |',
-                          new_text: 'c4\\p e-. g-. e-. |',
-                        },
-                      ],
-                    }),
-                  },
-                },
-              ],
-            },
-            'tool_calls',
-          ),
-        )
-      } else {
-        await route.fulfill(
-          stream({ content: 'Added staccato to the three notes.' }),
-        )
-      }
-    },
-  )
-  await page.getByLabel('Message the music assistant').fill('Add staccato')
-  await page.getByRole('button', { name: 'Send message' }).click()
-  await expect(page.locator('.message.assistant')).toContainText(
-    'Added staccato to the three notes.',
-  )
-  await expect(page.locator('.message.user .message-selection')).toHaveText(
-    '\\time 4/4 \\p e g e',
-  )
-  expect(calls).toBe(2)
-  // The edit invalidates the highlight; the chip is gone and the score changed.
-  await expect(chip).toHaveCount(0)
-  await page.getByRole('tab', { name: 'LilyPond', exact: true }).click()
-  const edited = await sourceOf(page.getByLabel('LilyPond source'))
-  expect(edited).toContain('    c4\\p e-. g-. e-. | f4 a g2 |\n')
-  expect(edited).not.toContain('c4\\p e g e |')
-})
-
 test('highlighting works even when the score turns point-and-click off', async ({
   page,
 }) => {
   await page.goto('./')
-  await configure(page)
   await page.getByRole('tab', { name: 'LilyPond', exact: true }).click()
   const editor = page.getByLabel('LilyPond source')
   await editor.fill(
@@ -410,14 +176,14 @@ test('pages can be shown as inline SVG for inspection, with active content strip
   await page.getByLabel('Sheet music pages').selectOption('inline')
   await page.getByRole('button', { name: 'Save settings' }).click()
   await expect(image).toBeVisible()
-  expect(await image.evaluate((node) => node.tagName)).toBe('DIV')
+  await expect.poll(() => image.evaluate((node) => node.tagName)).toBe('DIV')
   const systems = image.locator('svg g.system[data-system-id]')
   expect(await systems.count()).toBeGreaterThanOrEqual(2)
   // The inline page scales like the image did (no fixed millimetre size).
   expect(await image.locator('svg').getAttribute('width')).toBeNull()
   // The choice persists, and the highlighter still maps onto the inline page.
   await page.reload()
-  expect(await image.evaluate((node) => node.tagName)).toBe('DIV')
+  await expect.poll(() => image.evaluate((node) => node.tagName)).toBe('DIV')
   await expect(page.locator('.sheet-page:not(.stale)')).toBeVisible()
   await page
     .getByRole('button', { name: 'Highlight notes for the assistant' })
@@ -462,178 +228,6 @@ test('pages can be shown as inline SVG for inspection, with active content strip
   expect(sanitized).not.toContain('width="10mm"')
 })
 
-test('agent searches, edits with exact replacements, and shows its thinking', async ({
-  page,
-}) => {
-  await page.goto('./')
-  await configure(page)
-  await page.getByRole('tab', { name: 'LilyPond', exact: true }).click()
-  const editor = page.getByLabel('LilyPond source')
-  const original = await sourceOf(editor)
-  const thoughts = Array.from(
-    { length: 14 },
-    (_, index) => `thought ${index + 1}`,
-  ).join('\n')
-  let release!: () => void
-  const held = new Promise<void>((resolve) => {
-    release = resolve
-  })
-  const bodies: { messages: { role: string; content: unknown }[] }[] = []
-  const call = (id: string, name: string, args: object) => ({
-    tool_calls: [
-      {
-        index: 0,
-        id,
-        type: 'function',
-        function: { name, arguments: JSON.stringify(args) },
-      },
-    ],
-  })
-  await page.route(
-    'https://openrouter.ai/api/v1/chat/completions',
-    async (route) => {
-      bodies.push(route.request().postDataJSON())
-      if (bodies.length === 1)
-        await route.fulfill(
-          stream(
-            {
-              reasoning: thoughts,
-              ...call('find', 'search_score', { query: 'andante' }),
-            },
-            'tool_calls',
-          ),
-        )
-      else if (bodies.length === 2) {
-        await held
-        await route.fulfill(
-          stream(
-            call('edit', 'edit_score', {
-              edits: [{ old_text: '"Andante"', new_text: '"Allegro"' }],
-            }),
-            'tool_calls',
-          ),
-        )
-      } else await route.fulfill(stream({ content: 'Now it is Allegro.' }))
-    },
-  )
-  await page.getByLabel('Message the music assistant').fill('Make it faster')
-  await page.getByRole('button', { name: 'Send message' }).click()
-  // While the model is still working, its thinking tails the last ten lines.
-  const thinking = page.locator('.thinking-text')
-  await expect(thinking).toBeVisible()
-  await expect(thinking).toContainText('thought 14')
-  const lineHeight = await thinking.evaluate(
-    (element) => parseFloat(getComputedStyle(element).lineHeight) || 16.5,
-  )
-  expect((await thinking.boundingBox())!.height).toBeLessThan(
-    lineHeight * 11 + 12,
-  )
-  release()
-  await expect(page.getByText('Now it is Allegro.')).toBeVisible()
-  await expect
-    .poll(() => sourceOf(editor))
-    .toEqual(original.replace('"Andante"', '"Allegro"'))
-  const searched = bodies[1].messages.find(
-    (message) => message.role === 'tool',
-  )!.content as string
-  // Tool results reach the model as plain text, not JSON-encoded strings.
-  expect(searched).toMatch(/^1 matching line\(s\):\n\d+\t\s+\\tempo "Andante"/)
-  expect(JSON.stringify(bodies[2].messages)).toContain('Applied successfully')
-  // Once done, the thinking folds away fully and can be expanded in full.
-  await expect(thinking).toHaveCount(0)
-  await page.getByRole('button', { name: 'Thought process' }).click()
-  await expect(thinking).toContainText('thought 1\n')
-  await expect(thinking).toContainText('thought 14')
-  expect((await thinking.boundingBox())!.height).toBeGreaterThan(
-    lineHeight * 13,
-  )
-})
-
-test('agent searches and reads the bundled LilyPond documentation', async ({
-  page,
-}) => {
-  await page.goto('./')
-  await configure(page)
-  const results: string[] = []
-  const call = (id: string, name: string, args: object) =>
-    stream(
-      {
-        tool_calls: [
-          {
-            index: 0,
-            id,
-            type: 'function',
-            function: { name, arguments: JSON.stringify(args) },
-          },
-        ],
-      },
-      'tool_calls',
-    )
-  await page.route(
-    'https://openrouter.ai/api/v1/chat/completions',
-    async (route) => {
-      const messages = route.request().postDataJSON().messages
-      const tool = messages.at(-1)
-      if (tool.role === 'tool') results.push(tool.content)
-      if (results.length === 0)
-        await route.fulfill(
-          call('find', 'search_docs', {
-            query: 'crescendo hairpin',
-            kind: 'notation',
-          }),
-        )
-      else if (results.length === 1)
-        await route.fulfill(call('read', 'read_doc', { id: 'dynamics' }))
-      else await route.fulfill(stream({ content: 'Use \\< and \\!.' }))
-    },
-  )
-  await page
-    .getByLabel('Message the music assistant')
-    .fill('How do hairpins work?')
-  await page.getByRole('button', { name: 'Send message' }).click()
-  await expect(page.locator('.message.assistant')).toContainText('Use')
-  expect(results[0]).toMatch(/^Top \d+ results for "crescendo hairpin"/)
-  expect(results[0]).toContain('Dynamics [notation] id: dynamics')
-  expect(results[1]).toMatch(
-    /^# Dynamics\nLilyPond 2\.24\.4 Notation Reference/,
-  )
-  expect(results[1]).toContain('Example (renders in Score Chat):')
-  expect(results[1]).toContain('\\version "2.24.4"')
-})
-
-test('the thinking setting sets the reasoning effort sent to OpenRouter', async ({
-  page,
-}) => {
-  await page.goto('./')
-  await configure(page)
-  const bodies: Record<string, unknown>[] = []
-  await page.route('https://openrouter.ai/api/v1/chat/completions', (route) => {
-    bodies.push(route.request().postDataJSON())
-    return route.fulfill(stream({ content: 'Hi.' }))
-  })
-  const ask = async () => {
-    await page.getByLabel('Message the music assistant').fill('Hello')
-    await page.getByRole('button', { name: 'Send message' }).click()
-    await expect(page.getByLabel('Message the music assistant')).toBeEnabled()
-  }
-  await ask()
-  expect(bodies[0]).not.toHaveProperty('reasoning')
-  expect(bodies[0].max_tokens).toBe(8192)
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
-  await page.getByLabel('Thinking').selectOption('high')
-  await page.getByRole('button', { name: 'Save settings' }).click()
-  await page.reload()
-  await ask()
-  expect(bodies[1].reasoning).toEqual({ effort: 'high' })
-  expect(bodies[1].max_tokens).toBe(16384)
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
-  await page.getByLabel('Thinking').selectOption('Off')
-  await page.getByRole('button', { name: 'Save settings' }).click()
-  await ask()
-  expect(bodies[2].reasoning).toEqual({ effort: 'none' })
-  expect(bodies[2].max_tokens).toBe(8192)
-})
-
 test('the assistant dock can be resized and remembers its size', async ({
   page,
 }) => {
@@ -647,35 +241,22 @@ test('the assistant dock can be resized and remembers its size', async ({
   await page.mouse.down()
   await page.mouse.move(grip.x - 191, grip.y - 291, { steps: 5 })
   await page.mouse.up()
+  // The dock follows in the next frame.
+  await expect
+    .poll(async () =>
+      Math.round((await dock.boundingBox())!.width - before.width),
+    )
+    .toBe(200)
   const after = (await dock.boundingBox())!
-  expect(Math.round(after.width - before.width)).toBe(200)
   expect(after.y).toBeLessThan(before.y - 200)
   await page.reload()
-  expect(Math.round((await dock.boundingBox())!.width)).toBe(
-    Math.round(after.width),
-  )
+  await expect
+    .poll(async () => Math.round((await dock.boundingBox())!.width))
+    .toBe(Math.round(after.width))
   await page.getByRole('separator', { name: /Resize assistant/ }).dblclick()
-  expect(Math.round((await dock.boundingBox())!.width)).toBe(
-    Math.round(before.width),
-  )
-})
-
-test('handles provider errors without exposing the API key', async ({
-  page,
-}) => {
-  await page.goto('./')
-  await configure(page)
-  await page.route('https://openrouter.ai/api/v1/chat/completions', (route) =>
-    route.fulfill({
-      status: 401,
-      json: { error: { message: 'test-key-only is invalid', code: 401 } },
-    }),
-  )
-  await page.getByLabel('Message the music assistant').fill('Hello')
-  await page.getByRole('button', { name: 'Send message' }).click()
-  await expect(page.getByRole('alert')).toContainText('Check your API key')
-  await expect(page.locator('body')).not.toContainText('test-key-only')
-  await expect(page.getByLabel('Message the music assistant')).toBeEnabled()
+  await expect
+    .poll(async () => Math.round((await dock.boundingBox())!.width))
+    .toBe(Math.round(before.width))
 })
 
 test('mobile workspace fits the viewport and settings work', async ({
@@ -689,94 +270,9 @@ test('mobile workspace fits the viewport and settings work', async ({
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
     390,
   )
-  await configure(page)
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await expect(page.getByLabel('Sheet music pages')).toBeVisible()
   await page.screenshot({ path: 'test-results/mobile.png', fullPage: true })
-})
-
-test('invalid agent edits return diagnostics and leave the score unchanged', async ({
-  page,
-}) => {
-  await page.goto('./')
-  await configure(page)
-  await page.getByRole('tab', { name: 'LilyPond', exact: true }).click()
-  const original = await sourceOf(page.getByLabel('LilyPond source'))
-  let calls = 0
-  await page.route(
-    'https://openrouter.ai/api/v1/chat/completions',
-    async (route) => {
-      calls++
-      if (calls === 1) {
-        await route.fulfill(
-          stream(
-            {
-              tool_calls: [
-                {
-                  index: 0,
-                  id: 'bad-edit',
-                  type: 'function',
-                  function: {
-                    name: 'update_score',
-                    arguments: JSON.stringify({ source: 'invalid score' }),
-                  },
-                },
-              ],
-            },
-            'tool_calls',
-          ),
-        )
-      } else {
-        expect(
-          JSON.stringify(route.request().postDataJSON().messages),
-        ).toContain('Validation failed')
-        await route.fulfill(
-          stream({
-            content: 'That notation is unsupported; your score is unchanged.',
-          }),
-        )
-      }
-    },
-  )
-  await page
-    .getByLabel('Message the music assistant')
-    .fill('Try an unsupported change')
-  await page.getByRole('button', { name: 'Send message' }).click()
-  await expect(
-    page.getByText('That notation is unsupported; your score is unchanged.'),
-  ).toBeVisible()
-  await expect
-    .poll(() => sourceOf(page.getByLabel('LilyPond source')))
-    .toEqual(original)
-  await expect(
-    page.getByRole('button', { name: 'Undo last score replacement' }),
-  ).toBeDisabled()
-})
-
-test('Stop cancels an in-flight model request and unlocks the workspace', async ({
-  page,
-}) => {
-  await page.goto('./')
-  await configure(page)
-  let release!: () => void
-  const held = new Promise<void>((resolve) => {
-    release = resolve
-  })
-  await page.route(
-    'https://openrouter.ai/api/v1/chat/completions',
-    async (route) => {
-      await held
-      await route.abort().catch(() => {})
-    },
-  )
-  const request = page.waitForRequest(
-    'https://openrouter.ai/api/v1/chat/completions',
-  )
-  await page.getByLabel('Message the music assistant').fill('Compose a melody')
-  await page.getByRole('button', { name: 'Send message' }).click()
-  await request
-  await page.getByRole('button', { name: 'Stop response' }).click()
-  await expect(page.getByRole('alert')).toContainText('Stopped.')
-  await expect(page.getByLabel('Message the music assistant')).toBeEnabled()
-  release()
 })
 
 test('blocked local storage shows a warning while editing remains usable', async ({
@@ -918,7 +414,11 @@ test('shows one page at a time, two when they fit, and turns pages', async ({
 { c'1 \pageBreak d'1 \pageBreak e'1 \pageBreak f'1 \pageBreak g'1 \pageBreak a'1 }
 `
   await page.addInitScript(
-    ([key, score]) => localStorage.setItem(key, score),
+    ([key, score]) => {
+      // Only the first visit migrates it; reloads keep the stored document.
+      if (!localStorage.getItem('score-chat.documents.v1'))
+        localStorage.setItem(key, score)
+    },
     [SCORE_KEY, sixPages],
   )
   await page.setViewportSize({ width: 1280, height: 900 })
@@ -957,9 +457,9 @@ test('the assistant can move to another corner and hide while it works', async (
     'aria-expanded',
     'true',
   )
-  const moved = (await dock.boundingBox())!
-  expect(moved.x).toBeLessThan(40)
-  expect(moved.y).toBeLessThan(120)
+  // The dock settles in the next frame.
+  await expect.poll(async () => (await dock.boundingBox())!.x).toBeLessThan(40)
+  expect((await dock.boundingBox())!.y).toBeLessThan(120)
   await page.reload()
   expect((await dock.boundingBox())!.x).toBeLessThan(40)
 
@@ -992,6 +492,10 @@ test('the source editor completes commands and marks unsupported ones', async ({
   await expect(page.locator('.cm-tooltip-autocomplete')).toHaveCount(0)
   for (let i = 0; i < 8; i++) await page.keyboard.press('Backspace')
   await page.keyboard.type('\\tupl')
+  // Let the render of the typed text finish: its error marks clear while it
+  // runs and return when it is done, and they settle the completion list.
+  await expect(page.locator('.cm-lintRange-error')).toHaveCount(0)
+  await expect(page.locator('.cm-lintRange-error').first()).toBeVisible()
   await expect(page.locator('.cm-completionLabel').first()).toHaveText(
     '\\tuplet',
   )

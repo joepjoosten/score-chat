@@ -118,6 +118,15 @@ export type AgentSettings = typeof AgentSettings.Type
 export const Me = Schema.Struct({ user: User, settings: AgentSettings })
 export type Me = typeof Me.Type
 
+/**
+ * How people sign in: Cloudflare Access (its one-time PIN, emailed by
+ * Cloudflare) or a link Score Chat emails itself.
+ */
+export const SignInConfig = Schema.Struct({
+  method: Schema.Literals(['access', 'email']),
+})
+export type SignInConfig = typeof SignInConfig.Type
+
 export const RequestLogin = Schema.Struct({
   email: Schema.String.check(Schema.isMaxLength(320)),
 })

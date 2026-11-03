@@ -71,12 +71,24 @@ export const redeemLoginToken = (token: string, now = Date.now()) =>
       WHERE token_hash = ${hash} AND used_at IS NULL AND expires_at > ${now}
       RETURNING email`
     if (!link) return yield* new InvalidLink()
+    return yield* startSession(link.email, now)
+  })
+
+/**
+ * Signs in an address someone has proven they own (a sign-in link, or
+ * Cloudflare Access), creating the account on first use.
+ */
+export const startSession = (rawEmail: string, now = Date.now()) =>
+  Effect.gen(function* () {
+    const email = normalizeEmail(rawEmail)
+    if (!EMAIL.test(email)) return yield* new InvalidEmail()
+    const sql = yield* SqlClient.SqlClient
     yield* sql`
       INSERT INTO users (id, email, created_at)
-      VALUES (${crypto.randomUUID()}, ${link.email}, ${now})
+      VALUES (${crypto.randomUUID()}, ${email}, ${now})
       ON CONFLICT (email) DO NOTHING`
     const [user] = yield* sql<User>`
-      SELECT id, email FROM users WHERE email = ${link.email}`
+      SELECT id, email FROM users WHERE email = ${email}`
     const session = randomToken()
     yield* sql`
       INSERT INTO sessions (token_hash, user_id, created_at, expires_at)

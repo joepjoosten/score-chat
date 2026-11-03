@@ -12,6 +12,8 @@ import * as Alchemy from 'alchemy'
 import * as Cloudflare from '@alchemy.run/cloudflare'
 import * as Config from 'effect/Config'
 import * as Effect from 'effect/Effect'
+import * as Output from 'alchemy/Output'
+import { ACCESS_PATH } from './server/access.ts'
 import type { DocumentAgent } from './server/DocumentAgent.ts'
 import type { Env } from './server/env.ts'
 
@@ -29,7 +31,11 @@ export const Web = Cloudflare.Website.Foldkit('ScoreChat', {
     DB: Accounts,
     DOCUMENT_AGENT: Cloudflare.DurableObject<DocumentAgent>('DocumentAgent'),
     MAILER: Cloudflare.Email.SendEmail('MAILER'),
-    EMAIL_FROM: Config.String('EMAIL_FROM'),
+    // Sign-in: through Cloudflare Access when a Zero Trust team is set,
+    // otherwise by links sent from EMAIL_FROM. Neither is a secret.
+    ACCESS_TEAM_DOMAIN: process.env.ACCESS_TEAM_DOMAIN ?? '',
+    ACCESS_AUD: process.env.ACCESS_AUD ?? '',
+    EMAIL_FROM: process.env.EMAIL_FROM ?? '',
     // Not an Alchemy.Random: losing it would make every stored key unreadable.
     KEY_ENCRYPTION_SECRET: Config.Redacted('KEY_ENCRYPTION_SECRET'),
     // Tests point the agent at a stand-in for OpenRouter; empty means OpenRouter.
@@ -67,6 +73,28 @@ export default Alchemy.Stack(
       })
     }
     const web = yield* Web
+    // Access guards only the sign-in path, so signed-out use, the API and
+    // the document sockets stay open to Score Chat's own sessions. There is
+    // no Access under `alchemy dev`, where tests stand in for it.
+    const team = process.env.ACCESS_TEAM_DOMAIN
+    if (team && process.env.ALCHEMY_DEV !== 'true') {
+      const idp = process.env.ACCESS_IDP_ID
+      const signIn = yield* Cloudflare.Access.Application('SignIn', {
+        type: 'self_hosted',
+        name: 'Score Chat sign-in',
+        domain: Output.map(
+          web.url,
+          (url) => `${new URL(url ?? 'https://invalid').host}${ACCESS_PATH}`,
+        ),
+        // Only long enough to land on the path; Score Chat's session lasts 30 days.
+        sessionDuration: '30m',
+        // Anyone who proves an address, typically with the one-time PIN.
+        policies: [{ decision: 'allow', include: ['everyone'] }],
+        ...(idp ? { allowedIdps: [idp], autoRedirectToIdentity: true } : {}),
+        appLauncherVisible: false,
+      })
+      return { url: web.url, accessAud: signIn.aud }
+    }
     return { url: web.url }
   }),
 )

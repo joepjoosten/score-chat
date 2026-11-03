@@ -13,7 +13,11 @@ import {
 export const AppRoute = defineRouteUnion({
   Home: {},
   Document: { documentId: Schema.String },
-  Login: { token: Schema.Option(Schema.String) },
+  /** `token` from an emailed link; `via=access` back from Cloudflare Access. */
+  Login: {
+    token: Schema.Option(Schema.String),
+    via: Schema.Option(Schema.String),
+  },
   NotFound: { path: Schema.String },
 })
 export type AppRoute = typeof AppRoute.Type
@@ -248,6 +252,8 @@ export const Model = Schema.Struct({
   settingsSaving: Schema.Boolean,
   settingsError: Schema.String,
 
+  /** How this deployment signs people in, as the server says. */
+  signInMethod: Schema.Literals(['access', 'email']),
   loginOpen: Schema.Boolean,
   loginEmail: Schema.String,
   loginState: LoginState,

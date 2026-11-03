@@ -58,6 +58,17 @@ export const FetchSession = Command.define('FetchSession', {
   ),
 })
 
+export const FetchSignInConfig = Command.define('FetchSignInConfig', {
+  messages: [Message.GotSignInConfig],
+  execute: Api.fetchSignInConfig.pipe(
+    Effect.map(({ method }) => Message.GotSignInConfig({ method })),
+    // Without an answer, the emailed link is the one that works locally.
+    Effect.catch(() =>
+      Effect.succeed(Message.GotSignInConfig({ method: 'email' })),
+    ),
+  ),
+})
+
 export const RequestLoginLink = Command.define('RequestLoginLink', {
   args: { email: Schema.String },
   messages: [Message.SentLoginLink, Message.FailedLogin],

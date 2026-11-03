@@ -106,6 +106,7 @@ export const initialModel = (flags: Flags, route: Model['route']): Model => ({
   },
   settingsSaving: false,
   settingsError: '',
+  signInMethod: 'email',
   loginOpen: false,
   loginEmail: '',
   loginState: 'idle',
@@ -119,5 +120,5 @@ export const init: Runtime.RoutingApplicationInit<Model, Message, Flags> = (
 ) => ({
   model: initialModel(flags, urlToAppRoute(url)),
   // Everything else waits until it is known whether someone is signed in.
-  commands: [Commands.FetchSession()],
+  commands: [Commands.FetchSession(), Commands.FetchSignInConfig()],
 })

@@ -142,13 +142,15 @@ npm run deploy -- --stage prod
 `alchemy deploy` builds the client and deploys the stack in `alchemy.run.ts`: the Worker with its static assets, the `DocumentAgent` Durable Object class (SQLite storage), the D1 database with `migrations/`, and the `send_email` binding. Deploys keep their state in Alchemy's state store on the Cloudflare account. Configuration comes from the environment or `.env`:
 
 - `KEY_ENCRYPTION_SECRET`: encrypts stored OpenRouter keys. Generate it once (`openssl rand -base64 32`) and back it up; without it, stored keys can't be decrypted and users have to enter them again.
-- `EMAIL_FROM`: the sender of sign-in links. Its domain must be onboarded to [Cloudflare Email Service](https://developers.cloudflare.com/email-service/) to send to any address. With the domain on Cloudflare, set `EMAIL_ZONE_ID` too and Alchemy onboards the sending domain.
+- **Sign-in**, one of:
+  - **Cloudflare Access (Zero Trust)**, which needs no mail domain: Cloudflare emails the one-time PIN. Set `ACCESS_TEAM_DOMAIN` to your team domain (`yourteam.cloudflareaccess.com`). The deploy then creates an Access application that guards only `/api/auth/access` and lets anyone in who proves an address. Signed-out use, the API and the document sockets stay outside Access. A successful sign-in lands on that path; the Worker checks the Access token (signature, issuer, expiry) and starts Score Chat's own 30-day session. The One-time PIN login method must be enabled in the team (Zero Trust › Settings › Authentication). Set `ACCESS_IDP_ID` to its ID to skip the provider picker. The deploy prints the application's audience tag as `accessAud`; set it as `ACCESS_AUD` to have the Worker check it too. Zero Trust's free plan covers 50 users.
+  - **Emailed links**, used when `ACCESS_TEAM_DOMAIN` is empty: `EMAIL_FROM` is the sender, and its domain must be onboarded to [Cloudflare Email Service](https://developers.cloudflare.com/email-service/). With the domain on Cloudflare, set `EMAIL_ZONE_ID` too and Alchemy onboards it. `alchemy dev` always uses links, with simulated mail.
 
 `.github/workflows/deploy.yml` runs formatting, unit tests, the build, and the server and browser tests on every push and pull request. Pushes to `main` then deploy the `prod` stage. It needs:
 
 - the secrets `CLOUDFLARE_API_TOKEN` and `KEY_ENCRYPTION_SECRET`;
-- the variables `CLOUDFLARE_ACCOUNT_ID`, `EMAIL_FROM` and optionally `EMAIL_ZONE_ID`.
+- the variable `CLOUDFLARE_ACCOUNT_ID`, plus either `ACCESS_TEAM_DOMAIN` (and optionally `ACCESS_IDP_ID` and `ACCESS_AUD`) or `EMAIL_FROM` (and optionally `EMAIL_ZONE_ID`).
 
-Run `npx alchemy state bootstrap` once beforehand: CI doesn't create the state store. The token needs Workers Scripts, D1, Durable Objects, Secrets Store and (with `EMAIL_ZONE_ID`) Email Sending and DNS permissions on the account.
+Run `npx alchemy state bootstrap` once beforehand: CI doesn't create the state store. The token needs Workers Scripts, D1, Durable Objects and Secrets Store permissions on the account. It also needs Access: Apps and Policies when you use Access, or Email Sending and DNS when you use `EMAIL_ZONE_ID`.
 
 References: [Foldkit](https://foldkit.dev), [Effect](https://effect.website), [Alchemy](https://alchemy.run), [Durable Objects](https://developers.cloudflare.com/durable-objects/), [OpenRouter API](https://openrouter.ai/docs/quickstart).

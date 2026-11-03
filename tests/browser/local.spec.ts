@@ -557,3 +557,36 @@ test('switching views keeps the place in both the sheet music and the source', a
     .poll(() => scroller.evaluate((element) => element.scrollTop))
     .toBe(200)
 })
+
+test('with Cloudflare Access, signing in hands over to Access and reports when it did not finish', async ({
+  page,
+}) => {
+  // The deployment says it signs in through Access; locally it uses links.
+  await page.route('**/api/auth/config', (route) =>
+    route.fulfill({ json: { method: 'access' } }),
+  )
+  // Access itself is Cloudflare's; here it sends the browser straight back
+  // without a session, as a cancelled sign-in would.
+  let handedOver = false
+  await page.route('**/api/auth/access', (route) => {
+    handedOver = true
+    return route.fulfill({
+      status: 302,
+      headers: { Location: '/login?via=access' },
+    })
+  })
+  await page.goto('./')
+  await expect(page.getByText('1 page · rendered locally')).toBeVisible()
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toContainText('emails you a one-time code')
+  await expect(dialog.getByLabel('Email')).toHaveCount(0)
+  await dialog.getByRole('button', { name: 'Continue to sign in' }).click()
+  await expect(page.getByRole('alert')).toContainText(
+    'Signing in with Cloudflare Access did not finish',
+  )
+  expect(handedOver).toBe(true)
+  // Back home with the local score, not stuck on /login.
+  await expect(page).not.toHaveURL(/\/login/)
+  await expect(page.getByText('1 page · rendered locally')).toBeVisible()
+})

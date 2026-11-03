@@ -15,6 +15,7 @@ export const Message = defineMessageUnion({
   // Accounts
   GotSession: { me: Me },
   GotNoSession: {},
+  GotSignInConfig: { method: Schema.Literals(['access', 'email']) },
   ClickedSignIn: {},
   ClosedLogin: {},
   ChangedLoginEmail: { email: Schema.String },

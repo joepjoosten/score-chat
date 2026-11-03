@@ -5,6 +5,7 @@ import {
   CreatedDocument,
   DocumentList,
   Me,
+  SignInConfig,
   type UpdateSettings,
 } from '../shared/protocol.ts'
 
@@ -56,6 +57,9 @@ function request<A>(
 const Ok = Schema.Unknown
 
 export const fetchMe = request(Me, '/api/me')
+export const fetchSignInConfig = request(SignInConfig, '/api/auth/config')
+/** The path Cloudflare Access guards; visiting it signs in there. */
+export const ACCESS_SIGN_IN = '/api/auth/access'
 export const requestLoginLink = (email: string) =>
   request(Ok, '/api/auth/request', { method: 'POST', body: { email } })
 export const verifyLogin = (token: string) =>

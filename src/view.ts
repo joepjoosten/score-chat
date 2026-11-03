@@ -1196,34 +1196,43 @@ function loginDialog(h: H, model: Model): Html {
           model.loginReason
             ? h.p([h.Class('field-help')], [model.loginReason])
             : h.empty,
-          sent
+          model.signInMethod === 'access'
             ? h.p(
-                [h.Role('status')],
+                [h.Class('field-help')],
                 [
-                  `We sent a sign-in link to ${model.loginEmail.trim()}. Open it on this device to continue; it works once, for 15 minutes.`,
+                  'Cloudflare, which runs Score Chat, emails you a one-time code to sign in. No password needed. Signing in keeps your scores in your account, on any device, and lets you use the assistant.',
                 ],
               )
-            : h.div(
-                [],
-                [
-                  h.label([h.For('login-email')], ['Email']),
-                  h.input([
-                    h.Id('login-email'),
-                    h.Type('email'),
-                    h.Autocomplete('email'),
-                    h.Required(true),
-                    h.Value(model.loginEmail),
-                    h.OnInput((email) => Message.ChangedLoginEmail({ email })),
-                    h.Placeholder('you@example.com'),
-                  ]),
-                  h.p(
-                    [h.Class('field-help')],
-                    [
-                      'We email you a link that signs you in. No password needed. Signing in keeps your scores in your account, on any device, and lets you use the assistant.',
-                    ],
-                  ),
-                ],
-              ),
+            : sent
+              ? h.p(
+                  [h.Role('status')],
+                  [
+                    `We sent a sign-in link to ${model.loginEmail.trim()}. Open it on this device to continue; it works once, for 15 minutes.`,
+                  ],
+                )
+              : h.div(
+                  [],
+                  [
+                    h.label([h.For('login-email')], ['Email']),
+                    h.input([
+                      h.Id('login-email'),
+                      h.Type('email'),
+                      h.Autocomplete('email'),
+                      h.Required(true),
+                      h.Value(model.loginEmail),
+                      h.OnInput((email) =>
+                        Message.ChangedLoginEmail({ email }),
+                      ),
+                      h.Placeholder('you@example.com'),
+                    ]),
+                    h.p(
+                      [h.Class('field-help')],
+                      [
+                        'We email you a link that signs you in. No password needed. Signing in keeps your scores in your account, on any device, and lets you use the assistant.',
+                      ],
+                    ),
+                  ],
+                ),
           model.loginError
             ? h.p([h.Class('form-error'), h.Role('alert')], [model.loginError])
             : h.empty,
@@ -1256,9 +1265,13 @@ function loginDialog(h: H, model: Model): Html {
                       h.Disabled(model.loginState === 'sending'),
                     ],
                     [
-                      model.loginState === 'sending'
-                        ? 'Sending…'
-                        : 'Email me a link',
+                      model.signInMethod === 'access'
+                        ? model.loginState === 'sending'
+                          ? 'Opening sign-in…'
+                          : 'Continue to sign in'
+                        : model.loginState === 'sending'
+                          ? 'Sending…'
+                          : 'Email me a link',
                     ],
                   ),
             ],

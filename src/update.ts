@@ -11,6 +11,7 @@ import {
   type UpdateSettings,
 } from '../shared/protocol.ts'
 import { anchorKey, anchorsInBox, selectedNotes } from '../shared/selection.ts'
+import { ACCESS_SIGN_IN } from './api.ts'
 import * as Commands from './commands.ts'
 import {
   RevealInEditor,
@@ -315,6 +316,23 @@ function followRoute(model: Model): Return {
       }
     }
     case 'Login':
+      // Back from Cloudflare Access: the Worker started a session, if it could.
+      if (Option.isSome(route.via))
+        return signedIn
+          ? {
+              model: { ...model, loginOpen: false, loading: true },
+              commands: [Commands.ImportLocalDocuments()],
+            }
+          : {
+              model: {
+                ...model,
+                loginOpen: true,
+                loginState: 'idle' as const,
+                loginError:
+                  'Signing in with Cloudflare Access did not finish. Try again.',
+              },
+              commands: [Commands.ReplaceUrl({ url: '/' })],
+            }
       return Option.match(route.token, {
         onSome: (token) => ({
           model: {
@@ -568,15 +586,24 @@ export const update = (model: Model, message: Message): Return =>
     ChangedLoginEmail: ({ email }) => ({
       model: { ...model, loginEmail: email },
     }),
+    GotSignInConfig: ({ method }) => ({
+      model: { ...model, signInMethod: method },
+    }),
     SubmittedLogin: () =>
-      model.loginState === 'sending' || !model.loginEmail.trim()
-        ? { model }
-        : {
-            model: { ...model, loginState: 'sending', loginError: '' },
-            commands: [
-              Commands.RequestLoginLink({ email: model.loginEmail.trim() }),
-            ],
-          },
+      model.signInMethod === 'access'
+        ? // Cloudflare emails a one-time PIN and sends the browser back here.
+          {
+            model: { ...model, loginState: 'sending' },
+            commands: [Commands.LoadUrl({ href: ACCESS_SIGN_IN })],
+          }
+        : model.loginState === 'sending' || !model.loginEmail.trim()
+          ? { model }
+          : {
+              model: { ...model, loginState: 'sending', loginError: '' },
+              commands: [
+                Commands.RequestLoginLink({ email: model.loginEmail.trim() }),
+              ],
+            },
     SentLoginLink: () => ({ model: { ...model, loginState: 'sent' } }),
     FailedLogin: ({ error }) => {
       const verifying = model.loginState === 'verifying'

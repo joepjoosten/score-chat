@@ -17,10 +17,12 @@ import {
   UpdateSettings,
   VerifyLogin,
   scoreTitle,
+  type SignInConfig,
   type Me,
 } from '../shared/protocol.ts'
 import {
   LOGIN_LINK_MINUTES,
+  NotFound,
   SESSION_DAYS,
   createLoginToken,
   endSession,
@@ -31,8 +33,10 @@ import {
   removeDocument,
   requireOwnDocument,
   sessionUser,
+  startSession,
   updateSettings,
 } from './accounts.ts'
+import { ACCESS_PATH, teamOrigin, verifyAccessToken } from './access.ts'
 import { USER_HEADER } from './DocumentAgent.ts'
 import type { Env } from './env.ts'
 
@@ -40,6 +44,10 @@ export { DocumentAgent } from './DocumentAgent.ts'
 
 const env = workerEnv as unknown as Env
 const SESSION_COOKIE = 'sc_session'
+
+/** Cloudflare Access when a Zero Trust team is configured, else emailed links. */
+const signInMethod = (): SignInConfig['method'] =>
+  env.ACCESS_TEAM_DOMAIN ? 'access' : 'email'
 
 const webRequest = Effect.map(
   HttpServerRequest.HttpServerRequest,
@@ -124,10 +132,51 @@ const Routes = Layer.mergeAll(
     ),
   ),
   HttpRouter.add(
+    'GET',
+    '/api/auth/config',
+    handleErrors(
+      HttpServerResponse.json({
+        method: signInMethod(),
+      } satisfies SignInConfig),
+    ),
+  ),
+  // Cloudflare Access guards only this path. Whoever reaches it has signed in
+  // with Access; the token proves which address, and Score Chat's own session
+  // takes over from there.
+  HttpRouter.add(
+    'GET',
+    ACCESS_PATH,
+    handleErrors(
+      Effect.gen(function* () {
+        const request = yield* webRequest
+        const token = request.headers.get('Cf-Access-Jwt-Assertion')
+        const claims =
+          token && signInMethod() === 'access'
+            ? yield* Effect.promise(() =>
+                verifyAccessToken(token, teamOrigin(env.ACCESS_TEAM_DOMAIN), {
+                  ...(env.ACCESS_AUD ? { audience: env.ACCESS_AUD } : {}),
+                }).catch((error) => {
+                  console.error('Access sign-in failed', String(error))
+                  return undefined
+                }),
+              )
+            : undefined
+        // The app reads the outcome from its session, so both cases land there.
+        const done = HttpServerResponse.redirect('/login?via=access', {
+          status: 302,
+        })
+        if (!claims) return done
+        const { session } = yield* startSession(claims.email)
+        return yield* sessionCookie(done, session, yield* isSecure)
+      }),
+    ),
+  ),
+  HttpRouter.add(
     'POST',
     '/api/auth/request',
     handleErrors(
       Effect.gen(function* () {
+        if (signInMethod() !== 'email') return yield* new NotFound()
         const { email } = yield* HttpServerRequest.schemaBodyJson(RequestLogin)
         const request = yield* webRequest
         const created = yield* createLoginToken(email)

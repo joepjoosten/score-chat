@@ -12,7 +12,10 @@ export const documentRouter = pipe(
 export const loginRouter = pipe(
   literal('login'),
   Route.query(
-    Schema.Struct({ token: Schema.OptionFromOptional(Schema.String) }),
+    Schema.Struct({
+      token: Schema.OptionFromOptional(Schema.String),
+      via: Schema.OptionFromOptional(Schema.String),
+    }),
   ),
   Route.mapTo(AppRoute.Login),
 )

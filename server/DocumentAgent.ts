@@ -26,6 +26,7 @@ import { describeFailure, runAgent } from './agent.ts'
 import { assetFetcher, check, loadDocs } from './assets.ts'
 import type { Env } from './env.ts'
 import { history, systemPrompt } from './prompt.ts'
+import { classifyErrors, type CheckPosition } from './renderer/check.js'
 import type { ApplyOutcome } from './tools.ts'
 
 /** The header the Worker sets to the signed-in user it checked. */
@@ -68,6 +69,12 @@ interface Checkpoint {
   resumes: number
 }
 
+/** A browser's full render of an applied edit. */
+interface RenderReport {
+  errors: readonly string[]
+  positions: readonly (CheckPosition | null)[]
+}
+
 interface Attachment {
   userId: string
   /** Set once the socket has caught up, so live events follow the replay. */
@@ -107,7 +114,7 @@ export class DocumentAgent extends DurableObject<Env> {
   private touchTimer: ReturnType<typeof setTimeout> | undefined
   private readonly renderWaiters = new Map<
     number,
-    (errors: readonly string[]) => void
+    (report: RenderReport) => void
   >()
 
   constructor(ctx: DurableObjectState, env: Env) {
@@ -200,7 +207,10 @@ export class DocumentAgent extends DurableObject<Env> {
       case 'Rendered': {
         const waiter = this.renderWaiters.get(command.revision)
         this.renderWaiters.delete(command.revision)
-        return waiter?.(command.errors)
+        return waiter?.({
+          errors: command.errors,
+          positions: command.positions ?? [],
+        })
       }
       case 'ClearChat':
         return this.clearChat(socket)
@@ -508,25 +518,29 @@ export class DocumentAgent extends DurableObject<Env> {
           type: 'applied',
           engraved: false,
         })
-      return Effect.callback<readonly string[] | undefined>((resume) => {
+      return Effect.callback<RenderReport | undefined>((resume) => {
         const timer = setTimeout(() => {
           this.renderWaiters.delete(revision)
           resume(Effect.succeed(undefined))
         }, RENDER_WAIT)
-        this.renderWaiters.set(revision, (errors) => {
+        this.renderWaiters.set(revision, (report) => {
           clearTimeout(timer)
-          resume(Effect.succeed(errors))
+          resume(Effect.succeed(report))
         })
         return Effect.sync(() => {
           clearTimeout(timer)
           this.renderWaiters.delete(revision)
         })
       }).pipe(
-        Effect.map((errors): ApplyOutcome => {
-          if (errors === undefined) return { type: 'applied', engraved: false }
-          if (!errors.length) return { type: 'applied', engraved: true }
+        Effect.map((report): ApplyOutcome => {
+          if (report === undefined) return { type: 'applied', engraved: false }
+          if (!report.errors.length) return { type: 'applied', engraved: true }
           if (this.revision() === revision) this.setSource(before, 'agent')
-          return { type: 'rejected', errors }
+          // The same categories and hints as the server's own check.
+          return {
+            type: 'rejected',
+            result: classifyErrors(source, report.errors, report.positions),
+          }
         }),
       )
     })

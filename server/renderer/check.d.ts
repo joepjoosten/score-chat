@@ -5,12 +5,34 @@ export interface CheckPosition {
   endLine: number
   endColumn: number
 }
+/**
+ * What to do about a problem: fix the source (`syntax`, `invalid`),
+ * simplify valid LilyPond the renderer cannot handle yet (`unsupported`),
+ * or judge for yourself (`unclassified`). Warnings don't block rendering.
+ */
+export type CheckCategory = 'syntax' | 'invalid' | 'unsupported' | 'unclassified' | 'warning'
+export interface CheckDiagnostic {
+  severity: 'error' | 'warning'
+  category: CheckCategory
+  message: string
+  /** A concrete fix to try, such as a likely intended spelling. */
+  hint?: string
+  /** Where in the score, or null when it is elsewhere or unknown. */
+  position: CheckPosition | null
+}
 export interface CheckResult {
-  errors: string[]
-  positions: (CheckPosition | null)[]
+  /** No errors: the score parses and every construct is supported. */
+  ok: boolean
+  diagnostics: CheckDiagnostic[]
 }
 /** Parses and interprets a score like the browser render, without engraving it. */
 export function checkScore(
   source: string,
   asset: (path: string, binary: boolean) => Promise<string | ArrayBuffer>,
 ): Promise<CheckResult>
+/** Classifies errors the browser's full render reported, e.g. while engraving. */
+export function classifyErrors(
+  source: string,
+  errors: readonly string[],
+  positions?: readonly (CheckPosition | null)[],
+): CheckResult

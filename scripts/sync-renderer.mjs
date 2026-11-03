@@ -341,27 +341,32 @@ await build({
   loader: { '.svg': 'text' },
   define: { CATALOG: JSON.stringify(catalog) },
 })
-// The server's check: the same parser and music interpretation as the browser
-// render, without engraving or layout, so the agent's Durable Object can
-// reject unsupported edits without the fonts and layout tables. It reads
-// renderer data, fonts and stylesheets through the host's `asset` function,
-// just in time, like the browser worker.
+// The server's check: the renderer's checker (src/check/classify.ts, as used
+// by its --check) over the same parser and music interpretation as the
+// browser render, without engraving or layout. The Durable Object can then
+// reject an edit with a category and often a did-you-mean hint, without the
+// fonts and layout tables. Renderer data, fonts and stylesheets come through
+// the host's `asset` function, just in time, like the browser worker.
 await mkdir('server/renderer', { recursive: true })
 await build({
   stdin: {
     contents: `
-      import { runV2BookOwnershipPipeline } from './src/v2/index.ts';
+      import { runV2BookOwnershipPipeline, V2PipelineError } from './src/v2/index.ts';
+      import { parseLilyPond } from './src/frontend/parser/index.ts';
       import { renderJustInTime, loadRendererDataTables } from './src/render/just-in-time.ts';
       import { declareMusicFont } from './src/fonts/music-font.ts';
       import { declareTextFont } from './src/fonts/text-font.ts';
       import { errorSpan } from './src/core/error-span.ts';
+      import { classifyDiagnostic, documentIdentifiers, SUPPORTED_VERSION, versionSpan } from './src/check/classify.ts';
+      const FILE = 'score.ly';
       const position = (span) =>
-        span && span.file === 'score.ly'
+        span && span.file === FILE
           ? { line: span.startLine, column: span.startColumn, endLine: span.endLine, endColumn: span.endColumn }
           : null;
       const catalog = CATALOG;
       for (const [name, parts] of Object.entries(catalog.music)) declareMusicFont(name, parts);
       for (const name of catalog.text) declareTextFont(name);
+      // Stylesheets a score may \\include (e.g. lilyjazz.ily), kept once loaded.
       const includes = new Map();
       const loaderFor = (asset) => ({
         rendererData: (file) => asset('data/' + file, false).then(JSON.parse),
@@ -374,38 +379,110 @@ await build({
           return asset('fonts/' + owner + '/' + name + '.otf', true).then((bytes) => new Uint8Array(bytes));
         },
       });
+      const contextFor = (source) => ({
+        sourceText: (file) => (file === FILE ? source : includes.get(file)),
+        userIdentifiers: documentIdentifiers(source),
+        hasIncludes: /\\\\include\\s*"/u.test(source),
+        file: FILE,
+      });
+      const shape = (diagnostic) => ({
+        severity: diagnostic.severity,
+        category: diagnostic.category,
+        message: diagnostic.message,
+        ...(diagnostic.hint ? { hint: diagnostic.hint } : {}),
+        position: position(diagnostic.span),
+      });
+      const result = (diagnostics) => ({
+        ok: !diagnostics.some((diagnostic) => diagnostic.severity === 'error'),
+        diagnostics: diagnostics.map(shape),
+      });
+      const errorDiagnostic = (error) => {
+        const span = errorSpan(error);
+        return {
+          severity: 'error',
+          message: error instanceof V2PipelineError
+            ? 'V2 renderer ' + error.message
+            : 'V2 renderer failed: ' + (error instanceof Error ? error.message : String(error)),
+          ...(span ? { span } : {}),
+        };
+      };
       /**
-       * Parses and interprets a score like the browser render, without
-       * engraving it. \`asset(path, binary)\` returns a file below
-       * public/renderer/ as text or an ArrayBuffer.
+       * Checks a score like the renderer's --check, but stops before engraving:
+       * parse errors (the first one, as later ones are often noise), a wrong
+       * \\version (the rest is still checked as if it were right), and what
+       * the music interpretation rejects, each classified as syntax, invalid,
+       * unsupported or unclassified, often with a hint. \`asset(path, binary)\`
+       * returns a file below public/renderer/ as text or an ArrayBuffer.
        */
       export async function checkScore(source, asset) {
         const loader = loaderFor(asset);
-        const missing = new Set();
-        const includeResolver = (name) => {
-          const base = name.replace(/^.*\\//, '');
-          if (includes.has(base)) return { file: base, source: includes.get(base) };
-          if (catalog.includes[base]) missing.add(base);
-          return undefined;
-        };
-        try {
-          await loadRendererDataTables(['nativeGrobDefaults'], loader);
-          for (;;) {
-            missing.clear();
-            await renderJustInTime(() => runV2BookOwnershipPipeline(source, { file: 'score.ly', includeResolver }), loader);
-            if (!missing.size) return { errors: [], positions: [] };
-            await Promise.all([...missing].map(async (base) =>
-              includes.set(base, await asset(catalog.includes[base], false))));
-          }
-        } catch (error) {
-          // A stylesheet that is still missing makes the parse fail; load it and check again.
-          if (missing.size) {
-            await Promise.all([...missing].map(async (base) =>
-              includes.set(base, await asset(catalog.includes[base], false))));
-            return checkScore(source, asset);
-          }
-          return { errors: [String(error)], positions: [position(errorSpan(error))] };
+        await loadRendererDataTables(['nativeGrobDefaults'], loader);
+        for (;;) {
+          const missing = new Set();
+          const includeResolver = (name) => {
+            const base = name.replace(/^.*\\//, '');
+            if (includes.has(base)) return { file: base, source: includes.get(base) };
+            if (catalog.includes[base]) missing.add(base);
+            return undefined;
+          };
+          const { value: diagnostics } = await renderJustInTime(() => {
+            const context = contextFor(source);
+            const found = [];
+            const seen = new Set();
+            const add = (diagnostic) => {
+              const key = diagnostic.severity + '|' + diagnostic.message + '|' + JSON.stringify(diagnostic.span ?? null);
+              if (!seen.has(key)) { seen.add(key); found.push(classifyDiagnostic(diagnostic, context)); }
+            };
+            let parsed;
+            try {
+              parsed = parseLilyPond(source, { file: FILE, includeResolver });
+            } catch (error) {
+              add(errorDiagnostic(error));
+              return found;
+            }
+            const first = parsed.diagnostics.findIndex((diagnostic) => diagnostic.severity === 'error');
+            for (const diagnostic of first < 0 ? parsed.diagnostics : parsed.diagnostics.slice(0, first + 1)) add(diagnostic);
+            let checked = source;
+            if (parsed.version !== SUPPORTED_VERSION) {
+              const span = versionSpan(source, FILE);
+              found.push({
+                severity: 'error',
+                category: 'unsupported',
+                message: parsed.version === undefined
+                  ? 'No \\\\version statement; this renderer requires \\\\version "' + SUPPORTED_VERSION + '".'
+                  : '\\\\version "' + parsed.version + '" is not supported; this renderer requires \\\\version "' + SUPPORTED_VERSION + '".',
+                hint: parsed.version === undefined
+                  ? 'Add \\\\version "' + SUPPORTED_VERSION + '" as the first line.'
+                  : 'Change it to \\\\version "' + SUPPORTED_VERSION + '".',
+                ...(span ? { span } : {}),
+              });
+              checked = span
+                ? source.replace(/(\\\\version\\s*")[^"]*"/u, '$1' + SUPPORTED_VERSION + '"')
+                : source + '\\n\\\\version "' + SUPPORTED_VERSION + '"\\n';
+            }
+            if (first >= 0) return found;
+            try {
+              runV2BookOwnershipPipeline(checked, { file: FILE, includeResolver });
+            } catch (error) {
+              // A missing table makes the run throw; renderJustInTime loads it and runs again.
+              if (error?.name === 'RendererDataNotLoadedError') throw error;
+              add(errorDiagnostic(error));
+            }
+            return found;
+          }, loader);
+          if (!missing.size) return result(diagnostics);
+          await Promise.all([...missing].map(async (base) =>
+            includes.set(base, await asset(catalog.includes[base], false))));
         }
+      }
+      /** Classifies errors the browser's full render reported, e.g. while engraving. */
+      export function classifyErrors(source, errors, positions = []) {
+        const context = contextFor(source);
+        return result(errors.map((message, index) => {
+          const at = positions[index];
+          const span = at ? { file: FILE, startLine: at.line, startColumn: at.column, endLine: at.endLine, endColumn: at.endColumn } : undefined;
+          return classifyDiagnostic({ severity: 'error', message, ...(span ? { span } : {}) }, context);
+        }));
       }
     `,
     resolveDir: root,
@@ -430,15 +507,37 @@ export interface CheckPosition {
   endLine: number
   endColumn: number
 }
+/**
+ * What to do about a problem: fix the source (\`syntax\`, \`invalid\`),
+ * simplify valid LilyPond the renderer cannot handle yet (\`unsupported\`),
+ * or judge for yourself (\`unclassified\`). Warnings don't block rendering.
+ */
+export type CheckCategory = 'syntax' | 'invalid' | 'unsupported' | 'unclassified' | 'warning'
+export interface CheckDiagnostic {
+  severity: 'error' | 'warning'
+  category: CheckCategory
+  message: string
+  /** A concrete fix to try, such as a likely intended spelling. */
+  hint?: string
+  /** Where in the score, or null when it is elsewhere or unknown. */
+  position: CheckPosition | null
+}
 export interface CheckResult {
-  errors: string[]
-  positions: (CheckPosition | null)[]
+  /** No errors: the score parses and every construct is supported. */
+  ok: boolean
+  diagnostics: CheckDiagnostic[]
 }
 /** Parses and interprets a score like the browser render, without engraving it. */
 export function checkScore(
   source: string,
   asset: (path: string, binary: boolean) => Promise<string | ArrayBuffer>,
 ): Promise<CheckResult>
+/** Classifies errors the browser's full render reported, e.g. while engraving. */
+export function classifyErrors(
+  source: string,
+  errors: readonly string[],
+  positions?: readonly (CheckPosition | null)[],
+): CheckResult
 `,
 )
 await writeFile(

@@ -31,7 +31,7 @@ No account is needed to edit, import, render, play or export music. Those scores
 - **Editing with the assistant.** Ask the assistant to explain or edit music.
   - Its Effect AI tools search, read (by line range), check and edit the document on the server.
   - Targeted changes are exact text replacements rather than a full rewrite.
-  - Each edit is checked with the renderer's parser and music interpretation before it is applied. An open browser then engraves it, and an edit it cannot engrave is taken back; the model gets the diagnostics either way.
+  - Each edit is checked with the renderer's checker before it is applied. It parses and interprets the music, and labels each problem as a syntax error, invalid LilyPond or a construct the renderer doesn't support, often with a fix to try. An open browser then engraves it, and an edit it cannot engrave is taken back; the model gets the diagnostics either way.
   - **Stop** ends the turn.
 - **It keeps working without you.** The turn belongs to the document, not the page. Close the tab or lose the connection and it carries on; when you come back, the browser replays only the events it missed.
 - **Documentation lookups.** The assistant can look things up in the bundled LilyPond 2.24.4 documentation (Notation Reference, snippets and Music Glossary) with full-text search. Every example in it is marked by whether Score Chat's renderer supports it.
@@ -105,7 +105,7 @@ To refresh the LilyJAZZ fonts and stylesheets in `public/renderer/fonts/lilyjazz
 
 For profiling or debugging locally, `npm run renderer:sync -- --debug` writes an unminified worker with a source map instead; sync again without it before committing.
 
-The sync also writes `server/renderer/check.js`, the server's check: the same parser and music interpretation, bundled from the same commit without engraving or layout. Commit the updated worker, the check and the version metadata together. The sync command requires a clean source checkout and does not change it. It bundles the same `renderLySourceToSvg` and `parseSvgFontManifest` entry points used by that project's browser playground. The bundle is public when the app is deployed.
+The sync also writes `server/renderer/check.js`, the server's check, bundled from the same commit. It runs the renderer's checker (the classifier behind its `--check`) over the parser and music interpretation, without engraving or layout. Every problem is labelled syntax, invalid, unsupported or unclassified, often with a hint such as the intended spelling. Commit the updated worker, the check and the version metadata together. The sync command requires a clean source checkout and does not change it. It bundles the same `renderLySourceToSvg` and `parseSvgFontManifest` entry points used by that project's browser playground. The bundle is public when the app is deployed.
 
 ## Update the LilyPond documentation
 

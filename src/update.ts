@@ -848,6 +848,7 @@ export const update = (model: Model, message: Message): Return =>
               _tag: 'Rendered',
               revision: model.revision,
               errors: [...result.errors],
+              positions: [...result.positions],
             })
           : []
       return { model: next, commands: [editorErrors(next), ...report] }

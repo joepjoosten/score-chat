@@ -3,7 +3,7 @@ import { Tool, Toolkit } from 'effect/ai'
 import { applyEdits, readLines, searchLines } from '../shared/scoreText.ts'
 import { formatSearchResults, readDoc } from '../shared/docs.ts'
 import type { DocsIndex } from '../shared/docs.ts'
-import type { CheckResult } from './renderer/check.js'
+import type { CheckDiagnostic, CheckResult } from './renderer/check.js'
 
 export const ScoreTools = Toolkit.make(
   Tool.make('read_score', {
@@ -79,7 +79,7 @@ export type ApplyOutcome =
   /** Applied; `engraved` when a browser rendered it without errors. */
   | { readonly type: 'applied'; readonly engraved: boolean }
   /** The browser could not engrave it, so it was taken back. */
-  | { readonly type: 'rejected'; readonly errors: readonly string[] }
+  | { readonly type: 'rejected'; readonly result: CheckResult }
   /** The score changed in the meantime; nothing was applied. */
   | { readonly type: 'stale' }
 
@@ -97,16 +97,42 @@ export interface ToolContext {
   readonly onStatus: (status: string) => void
 }
 
-const diagnostics = (errors: readonly string[], result?: CheckResult) =>
-  errors
-    .map((error, index) => {
-      const position = result?.positions[index]
-      const message = error.replace(/^V2PipelineError:\s*/, '')
-      return position
-        ? `Line ${position.line}, column ${position.column}: ${message}`
-        : message
+/** What each category asks of the model. */
+const ADVICE: Record<CheckDiagnostic['category'], string> = {
+  syntax: 'syntax error, fix the source',
+  invalid: 'not valid LilyPond, fix the source',
+  unsupported: 'valid LilyPond the renderer does not support, find another way',
+  unclassified: 'error',
+  warning: 'warning',
+}
+
+// The renderer's hints are written for its command line; Score Chat cannot
+// add fonts, so the one way out is to avoid the character.
+const hintFor = (diagnostic: CheckDiagnostic) =>
+  diagnostic.hint?.includes('--font-dir')
+    ? 'Leave the character out or replace it; Score Chat cannot add text fonts.'
+    : diagnostic.hint
+
+/** One line per problem: where, what kind, what, and a fix to try. */
+export const formatDiagnostics = (diagnostics: readonly CheckDiagnostic[]) =>
+  diagnostics
+    .map((diagnostic) => {
+      const at = diagnostic.position
+        ? `Line ${diagnostic.position.line}, column ${diagnostic.position.column}`
+        : 'Score'
+      const hint = hintFor(diagnostic)
+      return `${at} (${ADVICE[diagnostic.category]}): ${diagnostic.message}${hint ? ` Hint: ${hint}` : ''}`
     })
     .join('\n')
+
+const errorsOf = (result: CheckResult) =>
+  result.diagnostics.filter((diagnostic) => diagnostic.severity === 'error')
+const warningsOf = (result: CheckResult) => {
+  const warnings = result.diagnostics.filter(
+    (diagnostic) => diagnostic.severity === 'warning',
+  )
+  return warnings.length ? `\nWarnings:\n${formatDiagnostics(warnings)}` : ''
+}
 
 export function scoreToolHandlers(context: ToolContext) {
   const withDocs = (use: (index: DocsIndex) => string) =>
@@ -133,21 +159,24 @@ export function scoreToolHandlers(context: ToolContext) {
       if (checked._tag === 'None')
         return 'The renderer could not be loaded to check the score. Nothing was applied; try again.'
       const result = checked.value
-      if (result.errors.length)
-        return `Validation failed. Fix these errors and try again:\n${diagnostics(result.errors, result)}`
+      if (!result.ok)
+        return `Validation failed. Fix these errors and try again:\n${formatDiagnostics(errorsOf(result))}`
       if (!apply)
-        return 'Validated successfully: it parses and every construct is supported. Layout problems would only show when it is engraved.'
+        return `Validated successfully: it parses and every construct is supported. Layout problems would only show when it is engraved.${warningsOf(result)}`
       context.onStatus('Engraving your score…')
       const outcome = yield* context.applySource(source, before)
       switch (outcome.type) {
         case 'stale':
           return 'The score changed during validation. Read it again before updating.'
         case 'rejected':
-          return `Validation failed. The renderer could not engrave it, so nothing was applied. Fix these errors and try again:\n${diagnostics(outcome.errors)}`
+          return `Validation failed. The renderer could not engrave it, so nothing was applied. Fix these errors and try again:\n${formatDiagnostics(errorsOf(outcome.result))}`
         case 'applied':
-          return outcome.engraved
-            ? 'Applied successfully. The user sees the engraved score.'
-            : 'Applied successfully. It parses and every construct is supported; no browser is open to engrave it yet.'
+          return (
+            (outcome.engraved
+              ? 'Applied successfully. The user sees the engraved score.'
+              : 'Applied successfully. It parses and every construct is supported; no browser is open to engrave it yet.') +
+            warningsOf(result)
+          )
       }
     })
   return ScoreTools.toLayer({

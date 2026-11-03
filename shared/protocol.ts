@@ -138,6 +138,14 @@ export const ApiError = Schema.Struct({ error: Schema.String })
 // ---------------------------------------------------------------------------
 // Document WebSocket
 
+/** A range in the score: 1-based lines, UTF-16 columns. */
+export const SourceSpan = Schema.Struct({
+  line: Schema.Number,
+  column: Schema.Number,
+  endLine: Schema.Number,
+  endColumn: Schema.Number,
+})
+
 /**
  * Browser → Durable Object. `Hello` opens (and reopens) a session: with the
  * sequence number of the last event the browser has, the server replays only
@@ -156,7 +164,12 @@ export const ClientCommand = Schema.TaggedUnion({
     baseRevision: Schema.Number,
   },
   /** The browser's full render of a revision, which also engraves it. */
-  Rendered: { revision: Schema.Number, errors: Schema.Array(Schema.String) },
+  Rendered: {
+    revision: Schema.Number,
+    errors: Schema.Array(Schema.String),
+    /** Where each error is in the score, or null; absent from older clients. */
+    positions: Schema.optionalKey(Schema.Array(Schema.NullOr(SourceSpan))),
+  },
   ClearChat: {},
   Ping: {},
 })

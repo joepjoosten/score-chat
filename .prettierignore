@@ -8,3 +8,4 @@ playwright-report/
 test-results/
 server/renderer/check.js
 .alchemy/
+server/renderer/check.d.ts

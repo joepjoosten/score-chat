@@ -913,7 +913,14 @@ test('playback lights up the sounding note heads, pauses, and rewinds', async ({
 test('shows one page at a time, two when they fit, and turns pages', async ({
   page,
 }) => {
-  await page.addInitScript((key) => localStorage.removeItem(key), SCORE_KEY)
+  // Six pages, one bar each.
+  const sixPages = String.raw`\version "2.24.4"
+{ c'1 \pageBreak d'1 \pageBreak e'1 \pageBreak f'1 \pageBreak g'1 \pageBreak a'1 }
+`
+  await page.addInitScript(
+    ([key, score]) => localStorage.setItem(key, score),
+    [SCORE_KEY, sixPages],
+  )
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.goto('./')
   const label = page.locator('.page-label')

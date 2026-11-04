@@ -590,3 +590,22 @@ test('with Cloudflare Access, signing in hands over to Access and reports when i
   await expect(page).not.toHaveURL(/\/login/)
   await expect(page.getByText('1 page · rendered locally')).toBeVisible()
 })
+
+test('when the sign-in email cannot be sent, the dialog says so instead of claiming it went out', async ({
+  page,
+}) => {
+  await page.route('**/api/auth/request', (route) =>
+    route.fulfill({
+      status: 500,
+      json: { error: 'Something went wrong. Try again.' },
+    }),
+  )
+  await page.goto('./')
+  await expect(page.getByText('1 page · rendered locally')).toBeVisible()
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByLabel('Email').fill('reader@example.com')
+  await dialog.getByRole('button', { name: 'Email me a link' }).click()
+  await expect(dialog).toContainText('Something went wrong')
+  await expect(dialog).not.toContainText('We sent a sign-in link')
+})

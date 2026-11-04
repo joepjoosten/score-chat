@@ -185,19 +185,13 @@ const Routes = Layer.mergeAll(
           // Locally, the simulated mailer only writes a file; print the link too.
           if (env.ALCHEMY_STAGE?.startsWith('dev'))
             console.log(`Sign-in link for ${created.value.email}: ${link}`)
+          // A failed send is reported: the dialog must not claim a link went out.
           yield* Effect.tryPromise(() =>
             env.MAILER.send({
               from: env.EMAIL_FROM,
               to: created.value.email,
               ...signInEmail(link, created.value.email),
             }),
-          ).pipe(
-            Effect.tapError((error) =>
-              Effect.sync(() =>
-                console.error('Sign-in email failed', String(error)),
-              ),
-            ),
-            Effect.orElseSucceed(() => undefined),
           )
         }
         // The same answer whether or not the address has an account or hit the limit.

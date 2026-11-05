@@ -116,11 +116,11 @@ await build({
   stdin: {
     contents: `
       import font from './assets/fonts/emmentaler-20.svg';
-      import { lazyPinnedEmmentalerManifest } from './src/fonts/glyphs.ts';
+      import { lazyPinnedEmmentalerManifest } from './src/fonts/music/emmentaler/manifest.ts';
       import { renderLySourceToSvg } from './src/render/ly-to-svg.ts';
       import { renderJustInTime, loadRendererDataTables, EMMENTALER_GLYPH_TABLES } from './src/render/just-in-time.ts';
-      import { declareMusicFont } from './src/fonts/music-font.ts';
-      import { declareTextFont } from './src/fonts/text-font.ts';
+      import { declareMusicFont } from './src/fonts/music/third-party/registry.ts';
+      import { declareTextFont } from './src/fonts/text/opentype-text.ts';
       import { pointAndClickLinker } from './src/render/point-and-click.ts';
       import { iterateSourcePerformances, performSourceMusic } from './src/performance/index.ts';
       import { momentDuration, performanceTicks } from './src/performance/time.ts';
@@ -354,8 +354,8 @@ await build({
       import { runV2BookOwnershipPipeline, V2PipelineError } from './src/v2/index.ts';
       import { parseLilyPond } from './src/frontend/parser/index.ts';
       import { renderJustInTime, loadRendererDataTables } from './src/render/just-in-time.ts';
-      import { declareMusicFont } from './src/fonts/music-font.ts';
-      import { declareTextFont } from './src/fonts/text-font.ts';
+      import { declareMusicFont } from './src/fonts/music/third-party/registry.ts';
+      import { declareTextFont } from './src/fonts/text/opentype-text.ts';
       import { errorSpan } from './src/core/error-span.ts';
       import { classifyDiagnostic, documentIdentifiers, SUPPORTED_VERSION, versionSpan } from './src/check/classify.ts';
       const FILE = 'score.ly';

@@ -74,6 +74,11 @@ const idle: Worker[] = []
 const MAX_IDLE = 2
 let nextId = 0
 
+const TIMEOUT_SECONDS = 20
+// The first render of a page downloads the renderer data and runs cold.
+const FIRST_RENDER_TIMEOUT_SECONDS = 30
+let hasRendered = false
+
 /**
  * Runs one request on a renderer worker. Only a worker whose request is
  * cancelled or times out is terminated; finished workers return to the pool.
@@ -83,6 +88,7 @@ function request<T>(
   signal: AbortSignal | undefined,
   answer: (data: any) => T,
   failed: (reason: string) => T,
+  seconds = TIMEOUT_SECONDS,
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
@@ -105,8 +111,10 @@ function request<T>(
     const timer = setTimeout(() => {
       cleanup()
       worker.terminate()
-      resolve(failed('Timed out after 20 seconds. Try a smaller score.'))
-    }, 20_000)
+      resolve(
+        failed(`Timed out after ${seconds} seconds. Try a smaller score.`),
+      )
+    }, seconds * 1000)
     const message = ({ data }: MessageEvent) => {
       if (data?.id !== id) return
       cleanup()
@@ -144,18 +152,22 @@ export function renderScore(
   return request(
     { source },
     signal,
-    (data) => ({
-      pages: data.pages,
-      errors: data.errors,
-      positions: data.positions ?? data.errors.map(() => null),
-      anchors: data.anchors ?? [],
-    }),
+    (data) => {
+      hasRendered = true
+      return {
+        pages: data.pages,
+        errors: data.errors,
+        positions: data.positions ?? data.errors.map(() => null),
+        anchors: data.anchors ?? [],
+      }
+    },
     (reason) => ({
       pages: [],
       errors: [reason.replace(/^Timed out/, 'Rendering timed out')],
       positions: [null],
       anchors: [],
     }),
+    hasRendered ? TIMEOUT_SECONDS : FIRST_RENDER_TIMEOUT_SECONDS,
   )
 }
 

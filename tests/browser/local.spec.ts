@@ -609,3 +609,16 @@ test('when the sign-in email cannot be sent, the dialog says so instead of claim
   await expect(dialog).toContainText('Something went wrong')
   await expect(dialog).not.toContainText('We sent a sign-in link')
 })
+
+test('the first render of a page gets 30 seconds before it times out', async ({
+  page,
+}) => {
+  // The renderer waits for its data, which never arrives.
+  await page.route('**/renderer/data/**', () => {})
+  await page.goto('./')
+  await page.waitForTimeout(25_000)
+  await expect(page.getByText('Rendering timed out')).toHaveCount(0)
+  await expect(
+    page.getByText('Rendering timed out after 30 seconds'),
+  ).toBeVisible({ timeout: 10_000 })
+})

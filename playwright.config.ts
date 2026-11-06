@@ -23,6 +23,7 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     env: {
       OPENROUTER_URL: 'http://127.0.0.1:8788/api/v1',
+      CONVERTER_URL: 'http://127.0.0.1:8788',
       EMAIL_FROM: 'signin@example.com',
       KEY_ENCRYPTION_SECRET: 'local-test-secret',
     },

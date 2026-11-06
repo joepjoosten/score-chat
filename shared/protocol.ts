@@ -101,6 +101,32 @@ export const CreateDocument = Schema.Struct({
 export const CreatedDocument = Schema.Struct({ id: Schema.String })
 
 // ---------------------------------------------------------------------------
+// PDF conversion
+
+export const MAX_PDF_BYTES = 50 * 1024 * 1024
+
+export const ConversionStatus = Schema.Literals([
+  'queued',
+  'converting',
+  'done',
+  'failed',
+])
+export type ConversionStatus = typeof ConversionStatus.Type
+
+/** A PDF on its way to becoming a document, which then has the same ID. */
+export const Conversion = Schema.Struct({
+  id: Schema.String,
+  fileName: Schema.String,
+  status: ConversionStatus,
+  error: Schema.NullOr(Schema.String),
+})
+export type Conversion = typeof Conversion.Type
+
+export const ConversionList = Schema.Struct({
+  conversions: Schema.Array(Conversion),
+})
+
+// ---------------------------------------------------------------------------
 // Accounts
 
 export const User = Schema.Struct({ id: Schema.String, email: Schema.String })
@@ -124,6 +150,8 @@ export type Me = typeof Me.Type
  */
 export const SignInConfig = Schema.Struct({
   method: Schema.Literals(['access', 'email']),
+  /** Whether this deployment can convert PDFs. */
+  conversions: Schema.Boolean,
 })
 export type SignInConfig = typeof SignInConfig.Type
 

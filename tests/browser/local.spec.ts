@@ -563,7 +563,7 @@ test('with Cloudflare Access, signing in hands over to Access and reports when i
 }) => {
   // The deployment says it signs in through Access; locally it uses links.
   await page.route('**/api/auth/config', (route) =>
-    route.fulfill({ json: { method: 'access' } }),
+    route.fulfill({ json: { method: 'access', conversions: false } }),
   )
   // Access itself is Cloudflare's; here it sends the browser straight back
   // without a session, as a cancelled sign-in would.

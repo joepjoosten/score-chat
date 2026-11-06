@@ -2,7 +2,7 @@
 import { Effect, Queue, Schema, Stream } from 'effect'
 import { Subscription } from 'foldkit'
 import { Message } from './message.ts'
-import { isBusy, type Model } from './model.ts'
+import { hasActiveConversion, isBusy, type Model } from './model.ts'
 import * as Player from './player.ts'
 import {
   DocumentSocket,
@@ -145,6 +145,19 @@ const pointerDrag = <Move extends AnyMessage, End extends AnyMessage>(
     }
   })
 
+const CONVERSION_POLL_MS = 5000
+
+/** Every few seconds while a PDF is being converted. */
+const conversionPolls = fromWindow<typeof Message.ElapsedConversionPoll.Type>(
+  (emit) => {
+    const timer = setInterval(
+      () => emit(Message.ElapsedConversionPoll()),
+      CONVERSION_POLL_MS,
+    )
+    return () => clearInterval(timer)
+  },
+)
+
 export const subscriptions = Subscription.make<
   Model,
   Message,
@@ -167,6 +180,14 @@ export const subscriptions = Subscription.make<
               ),
             )
           : Stream.empty,
+    },
+  ),
+  conversions: entry(
+    { active: Schema.Boolean },
+    {
+      modelToDependencies: (model) => ({ active: hasActiveConversion(model) }),
+      dependenciesToStream: ({ active }) =>
+        active ? conversionPolls : Stream.empty,
     },
   ),
   pageKeys: entry(

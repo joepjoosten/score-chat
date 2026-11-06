@@ -61,6 +61,23 @@ export function startOpenRouter(): Promise<Server> {
       releases.get(key)?.()
       return response.end('{}')
     }
+    // The PDF converter's stand-in: the PDF's text says how to answer.
+    if (url.pathname === '/convert') {
+      const pdf = await read(request)
+      response.setHeader('Content-Type', 'application/json')
+      await new Promise((resolve) => setTimeout(resolve, 1500))
+      if (pdf.includes('unreadable')) {
+        response.statusCode = 422
+        return response.end(
+          JSON.stringify({ error: 'No music staves were found in this PDF.' }),
+        )
+      }
+      return response.end(
+        JSON.stringify({
+          source: `\\version "2.24.4"\n\\header { title = "Converted score" }\n{ c'4 d' e' f' }\n`,
+        }),
+      )
+    }
     if (url.pathname !== '/api/v1/chat/completions') {
       response.statusCode = 404
       return response.end()

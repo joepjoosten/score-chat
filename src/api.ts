@@ -2,6 +2,8 @@
 import { Effect, Schema } from 'effect'
 import {
   ApiError,
+  Conversion,
+  ConversionList,
   CreatedDocument,
   DocumentList,
   Me,
@@ -24,7 +26,7 @@ const OFFLINE =
 function request<A>(
   schema: Schema.Codec<A, any>,
   path: string,
-  init: { method?: string; body?: unknown } = {},
+  init: { method?: string; body?: unknown; file?: Blob } = {},
 ): Effect.Effect<A, ApiFailure> {
   return Effect.tryPromise({
     try: async (signal) => {
@@ -32,9 +34,14 @@ function request<A>(
         method: init.method ?? 'GET',
         credentials: 'same-origin',
         signal,
-        headers:
-          init.body === undefined ? {} : { 'Content-Type': 'application/json' },
-        body: init.body === undefined ? undefined : JSON.stringify(init.body),
+        headers: init.file
+          ? { 'Content-Type': 'application/pdf' }
+          : init.body === undefined
+            ? {}
+            : { 'Content-Type': 'application/json' },
+        body:
+          init.file ??
+          (init.body === undefined ? undefined : JSON.stringify(init.body)),
       })
       const text = await response.text()
       const json = text ? JSON.parse(text) : null
@@ -75,6 +82,16 @@ export const createDocument = (source: string) =>
   })
 export const deleteDocument = (id: string) =>
   request(Ok, `/api/documents/${encodeURIComponent(id)}`, { method: 'DELETE' })
+export const fetchConversions = request(ConversionList, '/api/conversions')
+export const uploadPdf = (file: Blob, name: string) =>
+  request(Conversion, `/api/conversions?name=${encodeURIComponent(name)}`, {
+    method: 'POST',
+    file,
+  })
+export const dismissConversion = (id: string) =>
+  request(Ok, `/api/conversions/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
 
 export const socketUrl = (id: string) => {
   const url = new URL(

@@ -139,18 +139,31 @@ npx alchemy profile edit --add Cloudflare   # once: log in to Cloudflare
 npm run deploy -- --stage prod
 ```
 
-`alchemy deploy` builds the client and deploys the stack in `alchemy.run.ts`: the Worker with its static assets, the `DocumentAgent` Durable Object class (SQLite storage), the D1 database with `migrations/`, and the `send_email` binding. Deploys keep their state in Alchemy's state store on the Cloudflare account. Configuration comes from the environment or `.env`:
+`alchemy deploy` builds the client and deploys the stack in `alchemy.run.ts`: the Worker with its static assets, the `DocumentAgent` Durable Object class (SQLite storage), the D1 database with `migrations/`, the `send_email` binding, and the R2 bucket, queue and container for PDF conversion. The `prod` stage answers on `score-chat.joepie.dev`, and Cloudflare manages its DNS record and certificate; other stages stay on `workers.dev`. Deploys keep their state in Alchemy's state store on the Cloudflare account. Configuration comes from the environment or `.env`:
 
 - `KEY_ENCRYPTION_SECRET`: encrypts stored OpenRouter keys. Generate it once (`openssl rand -base64 32`) and back it up; without it, stored keys can't be decrypted and users have to enter them again.
 - **Sign-in**, one of:
   - **Cloudflare Access (Zero Trust)**, which needs no mail domain: Cloudflare emails the one-time PIN. Set `ACCESS_TEAM_DOMAIN` to your team domain (`yourteam.cloudflareaccess.com`). The deploy then creates an Access application that guards only `/api/auth/access` and lets anyone in who proves an address. Signed-out use, the API and the document sockets stay outside Access. A successful sign-in lands on that path; the Worker checks the Access token (signature, issuer, expiry) and starts Score Chat's own 30-day session. The One-time PIN login method must be enabled in the team (Zero Trust › Settings › Authentication). Set `ACCESS_IDP_ID` to its ID to skip the provider picker. The deploy prints the application's audience tag as `accessAud`; set it as `ACCESS_AUD` to have the Worker check it too. Zero Trust's free plan covers 50 users.
   - **Emailed links**, used when `ACCESS_TEAM_DOMAIN` is empty: `EMAIL_FROM` is the sender, and its domain must be onboarded to [Cloudflare Email Service](https://developers.cloudflare.com/email-service/). With the domain on Cloudflare, set `EMAIL_ZONE_ID` too and Alchemy onboards it. `alchemy dev` always uses links, with simulated mail.
 
+### PDF conversion
+
+A PDF dropped on the page or chosen with the Open button becomes a new document in the background, with a toast when it is done. It takes an account. The Worker stores the PDF in R2 and adds a message to a queue. The queue's consumer runs one job at a time: it wakes the `Converter` container, sends it the PDF, creates the document, and deletes the PDF. Browsers poll `/api/conversions` while a job is active, and an outcome stays until it is dismissed, so it still shows after the tab was closed.
+
+The container is [sheet-to-ly](https://github.com/joepjoosten/sheet-to-ly) behind `converter/server.py`, on a `standard-4` instance (4 vCPU, 12 GB) without internet. A page takes about 45 seconds of the 13 minutes a job gets, so PDFs are limited to 15 pages (`MAX_PAGES` in `converter/server.py`). It goes to sleep two minutes after the last job, and at most one instance runs. The code and weights aren't in this repository, so the image is built from a sheet-to-ly checkout with its `runs/` folder:
+
+```sh
+SHEET_TO_LY_DIR=/path/to/sheet-to-ly npm run converter:build   # about 1.9 GB
+CONVERTER_IMAGE=score-chat-converter npm run deploy -- --stage prod
+```
+
+Alchemy pushes the local image to Cloudflare's registry. CI has neither the weights nor that local image, so set the `CONVERTER_IMAGE` variable there to the `registry.cloudflare.com/...` reference of the pushed image. Without `CONVERTER_IMAGE`, a deploy removes the container and turns conversion off. Locally, and in the tests, `CONVERTER_URL` points the queue's consumer at another converter instead, such as `docker run -p 8080:8080 score-chat-converter` or a stand-in.
+
 `.github/workflows/deploy.yml` runs formatting, unit tests, the build, and the server and browser tests on every push and pull request. Pushes to `main` then deploy the `prod` stage. It needs:
 
 - the secrets `CLOUDFLARE_API_TOKEN` and `KEY_ENCRYPTION_SECRET`;
 - the variable `CLOUDFLARE_ACCOUNT_ID`, plus either `ACCESS_TEAM_DOMAIN` (and optionally `ACCESS_IDP_ID` and `ACCESS_AUD`) or `EMAIL_FROM` (and optionally `EMAIL_ZONE_ID`).
 
-Run `npx alchemy state bootstrap` once beforehand: CI doesn't create the state store. The token needs Workers Scripts, D1, Durable Objects and Secrets Store permissions on the account. It also needs Access: Apps and Policies when you use Access, or Email Sending and DNS when you use `EMAIL_ZONE_ID`.
+Run `npx alchemy state bootstrap` once beforehand: CI doesn't create the state store. The token needs Workers Scripts, D1, Durable Objects, R2, Queues, Containers and Secrets Store permissions on the account. It also needs Access: Apps and Policies when you use Access, or Email Sending and DNS when you use `EMAIL_ZONE_ID`.
 
 References: [Foldkit](https://foldkit.dev), [Effect](https://effect.website), [Alchemy](https://alchemy.run), [Durable Objects](https://developers.cloudflare.com/durable-objects/), [OpenRouter API](https://openrouter.ai/docs/quickstart).

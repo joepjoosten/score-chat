@@ -218,7 +218,8 @@ export const insertDocument = (
     const sql = yield* SqlClient.SqlClient
     yield* sql`
       INSERT INTO documents (id, owner_id, title, created_at, updated_at)
-      VALUES (${id}, ${userId}, ${title}, ${now}, ${now})`
+      VALUES (${id}, ${userId}, ${title}, ${now}, ${now})
+      ON CONFLICT (id) DO NOTHING`
   })
 
 export const requireOwnDocument = (userId: string, id: string) =>

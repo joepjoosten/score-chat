@@ -32,6 +32,7 @@ export {
   Sparkles,
   Square,
   Trash2,
+  TriangleAlert,
   Undo2,
   X,
   ZoomIn,

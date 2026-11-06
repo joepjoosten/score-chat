@@ -61,10 +61,14 @@ export const FetchSession = Command.define('FetchSession', {
 export const FetchSignInConfig = Command.define('FetchSignInConfig', {
   messages: [Message.GotSignInConfig],
   execute: Api.fetchSignInConfig.pipe(
-    Effect.map(({ method }) => Message.GotSignInConfig({ method })),
+    Effect.map(({ method, conversions }) =>
+      Message.GotSignInConfig({ method, conversions }),
+    ),
     // Without an answer, the emailed link is the one that works locally.
     Effect.catch(() =>
-      Effect.succeed(Message.GotSignInConfig({ method: 'email' })),
+      Effect.succeed(
+        Message.GotSignInConfig({ method: 'email', conversions: false }),
+      ),
     ),
   ),
 })
@@ -250,6 +254,40 @@ export const ReadScoreFile = Command.define('ReadScoreFile', {
             ),
           ),
         ),
+})
+
+// ---------------------------------------------------------------------------
+// PDF conversion
+
+export const FetchConversions = Command.define('FetchConversions', {
+  messages: [Message.GotConversions, Message.Completed],
+  execute: Api.fetchConversions.pipe(
+    Effect.map(({ conversions }) => Message.GotConversions({ conversions })),
+    // The next poll tries again.
+    Effect.catch(() => Effect.succeed(Message.Completed())),
+  ),
+})
+
+export const UploadPdf = Command.define('UploadPdf', {
+  args: { file: File.File },
+  messages: [Message.UploadedPdf, Message.FailedUploadPdf],
+  execute: ({ file }) =>
+    Api.uploadPdf(file, file.name).pipe(
+      Effect.map((conversion) => Message.UploadedPdf({ conversion })),
+      Effect.catch((error) =>
+        Effect.succeed(Message.FailedUploadPdf({ error: error.message })),
+      ),
+    ),
+})
+
+export const DismissConversion = Command.define('DismissConversion', {
+  args: { id: Schema.String },
+  messages: [Message.Completed],
+  execute: ({ id }) =>
+    Api.dismissConversion(id).pipe(
+      Effect.ignore,
+      Effect.as(Message.Completed()),
+    ),
 })
 
 export const DownloadSource = Command.define('DownloadSource', {

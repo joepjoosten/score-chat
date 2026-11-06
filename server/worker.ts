@@ -3,7 +3,7 @@
  * API, and forwards document WebSockets to their DocumentAgent.
  */
 import { env as workerEnv } from 'cloudflare:workers'
-import { Cause, Effect, Layer, Option, Schema } from 'effect'
+import { Cause, Data, Effect, Layer, Option, Schema } from 'effect'
 import {
   HttpRouter,
   HttpServer,
@@ -13,6 +13,7 @@ import {
 import { D1Client } from '@effect/sql-d1'
 import {
   CreateDocument,
+  MAX_PDF_BYTES,
   RequestLogin,
   UpdateSettings,
   VerifyLogin,
@@ -37,12 +38,24 @@ import {
   updateSettings,
 } from './accounts.ts'
 import { ACCESS_PATH, teamOrigin, verifyAccessToken } from './access.ts'
+import {
+  type ConversionMessage,
+  conversionsEnabled,
+  dismissConversion,
+  handleQueue,
+  listConversions,
+  startConversion,
+} from './conversions.ts'
 import { USER_HEADER } from './DocumentAgent.ts'
 import type { Env } from './env.ts'
 
+export { Converter } from './conversions.ts'
 export { DocumentAgent } from './DocumentAgent.ts'
 
 const env = workerEnv as unknown as Env
+
+class PdfTooLarge extends Data.TaggedError('PdfTooLarge') {}
+
 const SESSION_COOKIE = 'sc_session'
 
 /** Cloudflare Access when a Zero Trust team is configured, else emailed links. */
@@ -100,6 +113,12 @@ const expected: Record<string, [number, string]> = {
     400,
     'This sign-in link has expired or was already used. Request a new one.',
   ],
+  InvalidPdf: [400, 'This file is not a PDF.'],
+  PdfTooLarge: [413, 'Choose a PDF smaller than 50 MB.'],
+  TooManyConversions: [
+    429,
+    'You have three conversions running. Wait for one to finish.',
+  ],
   SchemaError: [400, 'The request was not valid.'],
   HttpServerError: [400, 'The request was not valid.'],
 }
@@ -137,6 +156,7 @@ const Routes = Layer.mergeAll(
     handleErrors(
       HttpServerResponse.json({
         method: signInMethod(),
+        conversions: conversionsEnabled(env),
       } satisfies SignInConfig),
     ),
   ),
@@ -289,6 +309,51 @@ const Routes = Layer.mergeAll(
   ),
   HttpRouter.add(
     'GET',
+    '/api/conversions',
+    handleErrors(
+      Effect.gen(function* () {
+        const user = yield* currentUser
+        return yield* HttpServerResponse.json({
+          conversions: yield* listConversions(user.id),
+        })
+      }),
+    ),
+  ),
+  // The body is the PDF itself, and the query its file name.
+  HttpRouter.add(
+    'POST',
+    '/api/conversions',
+    handleErrors(
+      Effect.gen(function* () {
+        const user = yield* currentUser
+        if (!conversionsEnabled(env)) return yield* new NotFound()
+        const request = yield* webRequest
+        const declared = Number(request.headers.get('Content-Length') ?? 0)
+        if (declared > MAX_PDF_BYTES) return yield* new PdfTooLarge()
+        const pdf = yield* Effect.promise(() => request.arrayBuffer())
+        if (pdf.byteLength > MAX_PDF_BYTES) return yield* new PdfTooLarge()
+        const name = new URL(request.url).searchParams.get('name') ?? ''
+        const conversion = yield* startConversion(env, user.id, name, pdf)
+        return yield* HttpServerResponse.json(conversion, { status: 202 })
+      }),
+    ),
+  ),
+  HttpRouter.add(
+    'DELETE',
+    '/api/conversions/:id',
+    handleErrors(
+      Effect.gen(function* () {
+        const user = yield* currentUser
+        const { id } = yield* HttpRouter.schemaPathParams(
+          Schema.Struct({ id: Schema.String }),
+        )
+        yield* dismissConversion(user.id, id)
+        return HttpServerResponse.empty({ status: 204 })
+      }),
+    ),
+  ),
+  HttpRouter.add(
+    'GET',
     '/api/documents/:id/socket',
     handleErrors(
       Effect.gen(function* () {
@@ -356,4 +421,5 @@ export default {
       return env.ASSETS.fetch(new Request(new URL('/', url), request))
     return response
   },
-} satisfies ExportedHandler<Env>
+  queue: handleQueue,
+} satisfies ExportedHandler<Env, ConversionMessage>

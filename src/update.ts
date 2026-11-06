@@ -1,7 +1,8 @@
 /** How each Message changes the Model, and which Commands follow. */
 import { Option } from 'effect'
-import { Navigation, Url, type Command, type Update } from 'foldkit'
+import { File, Navigation, Url, type Command, type Update } from 'foldkit'
 import {
+  MAX_PDF_BYTES,
   appendChunk,
   reasoningEfforts,
   scoreTitle,
@@ -269,6 +270,43 @@ function openLocal(model: Model, id: string, source: string): Return {
     source,
     { syncEditor: true },
   )
+}
+
+const isPdf = (file: File.File) =>
+  file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
+
+const withoutConversion = (model: Model, id: string): Model => ({
+  ...model,
+  conversions: model.conversions.filter((known) => known.id !== id),
+})
+
+/** A PDF becomes a new document in the background, which takes an account. */
+function selectedPdf(model: Model, file: File.File): Return {
+  if (!model.conversionsEnabled)
+    return {
+      model: {
+        ...model,
+        conversionError: "This site can't convert PDFs at the moment.",
+      },
+    }
+  if (model.session._tag !== 'SignedIn')
+    return {
+      model: {
+        ...model,
+        loginOpen: true,
+        loginState: 'idle',
+        loginReason: 'Sign in to convert a PDF to LilyPond.',
+      },
+    }
+  if (model.uploadingPdf !== null) return { model }
+  if (file.size > MAX_PDF_BYTES)
+    return {
+      model: { ...model, conversionError: 'Choose a PDF smaller than 50 MB.' },
+    }
+  return {
+    model: { ...model, uploadingPdf: file.name, conversionError: '' },
+    commands: [Commands.UploadPdf({ file })],
+  }
 }
 
 /** What a route asks for, once the session is known. */
@@ -556,7 +594,13 @@ export const update = (model: Model, message: Message): Return =>
 
     // Accounts ---------------------------------------------------------------
     GotSession: ({ me }) =>
-      followRoute({ ...model, session: { _tag: 'SignedIn', me } }),
+      andThen(
+        followRoute({ ...model, session: { _tag: 'SignedIn', me } }),
+        (next) => ({
+          model: next,
+          commands: [Commands.FetchConversions()],
+        }),
+      ),
     GotNoSession: () =>
       followRoute({
         ...model,
@@ -586,8 +630,12 @@ export const update = (model: Model, message: Message): Return =>
     ChangedLoginEmail: ({ email }) => ({
       model: { ...model, loginEmail: email },
     }),
-    GotSignInConfig: ({ method }) => ({
-      model: { ...model, signInMethod: method },
+    GotSignInConfig: ({ method, conversions }) => ({
+      model: {
+        ...model,
+        signInMethod: method,
+        conversionsEnabled: conversions,
+      },
     }),
     SubmittedLogin: () =>
       model.signInMethod === 'access'
@@ -633,6 +681,7 @@ export const update = (model: Model, message: Message): Return =>
         Commands.ReplaceUrl({
           url: documentId ? documentUrl(documentId) : '/',
         }),
+        Commands.FetchConversions(),
       ],
     }),
     ClickedSignOut: () => ({
@@ -646,6 +695,9 @@ export const update = (model: Model, message: Message): Return =>
           session: { _tag: 'SignedOut' },
           route: { _tag: 'Home' },
           documents: [],
+          conversions: [],
+          uploadingPdf: null,
+          conversionError: '',
         }),
         (next) => ({
           model: next,
@@ -806,6 +858,7 @@ export const update = (model: Model, message: Message): Return =>
     ClickedOpenFile: () => ({ model, commands: [Commands.ClickFileInput()] }),
     SelectedFiles: ({ files }) => {
       const file = files[0]
+      if (file && isPdf(file)) return selectedPdf(model, file)
       return file && !isBusy(model)
         ? { model, commands: [Commands.ReadScoreFile({ file })] }
         : { model }
@@ -833,6 +886,48 @@ export const update = (model: Model, message: Message): Return =>
         commands: [RevealInEditor({ position }), Commands.SavePrefs({ prefs })],
       }
     },
+
+    // PDF conversion ---------------------------------------------------------
+    UploadedPdf: ({ conversion }) => ({
+      model: {
+        ...model,
+        uploadingPdf: null,
+        conversions: [...model.conversions, conversion],
+      },
+    }),
+    FailedUploadPdf: ({ error }) => ({
+      model: { ...model, uploadingPdf: null, conversionError: error },
+    }),
+    ElapsedConversionPoll: () => ({
+      model,
+      commands: [Commands.FetchConversions()],
+    }),
+    GotConversions: ({ conversions }) => {
+      const finished = conversions.some(
+        ({ id, status }) =>
+          status === 'done' &&
+          model.conversions.find((known) => known.id === id)?.status !== 'done',
+      )
+      return {
+        model: { ...model, conversions },
+        // The new document belongs in the list right away.
+        commands: finished ? [Commands.FetchDocuments()] : [],
+      }
+    },
+    ClickedOpenConversion: ({ id }) => ({
+      model: withoutConversion(model, id),
+      commands: [
+        Commands.DismissConversion({ id }),
+        Commands.PushUrl({ url: documentUrl(id) }),
+      ],
+    }),
+    ClickedDismissConversion: ({ id }) => ({
+      model: withoutConversion(model, id),
+      commands: [Commands.DismissConversion({ id })],
+    }),
+    DismissedConversionError: () => ({
+      model: { ...model, conversionError: '' },
+    }),
 
     // Rendering ------------------------------------------------------------------
     ElapsedRenderDebounce: ({ generation }) => {

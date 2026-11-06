@@ -6,13 +6,15 @@
 import { spawn } from 'node:child_process'
 
 const APP = process.env.APP_URL ?? 'http://localhost:1337'
-const MOCK = `http://127.0.0.1:${process.env.MOCK_OPENROUTER_PORT ?? 8788}/api/v1`
+const MOCK_ORIGIN = `http://127.0.0.1:${process.env.MOCK_OPENROUTER_PORT ?? 8788}`
+const MOCK = `${MOCK_ORIGIN}/api/v1`
 const [command, ...args] = process.argv.slice(2)
 if (!command) throw new Error('Pass the command to run.')
 
 const env = {
   ...process.env,
   OPENROUTER_URL: process.env.OPENROUTER_URL ?? MOCK,
+  CONVERTER_URL: process.env.CONVERTER_URL ?? MOCK_ORIGIN,
   EMAIL_FROM: process.env.EMAIL_FROM ?? 'signin@example.com',
   // Local only: `alchemy dev` never shares this secret.
   KEY_ENCRYPTION_SECRET:

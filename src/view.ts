@@ -10,6 +10,7 @@ import {
   MAX_MESSAGE_LENGTH,
   scoreTitle,
   type ChatMessage,
+  type Conversion,
 } from '../shared/protocol.ts'
 import {
   anchorKey,
@@ -371,9 +372,13 @@ function toolbar(h: H, model: Model): Html {
               ]
             : []),
           h.span([h.Class('toolbar-divider')], []),
-          iconButton(h, 'Open .ly', I.FileUp, Message.ClickedOpenFile(), {
-            disabled: busy,
-          }),
+          iconButton(
+            h,
+            model.conversionsEnabled ? 'Open .ly or PDF' : 'Open .ly',
+            I.FileUp,
+            Message.ClickedOpenFile(),
+            { disabled: busy },
+          ),
           iconButton(
             h,
             'Download .ly',
@@ -1284,6 +1289,82 @@ function loginDialog(h: H, model: Model): Html {
 
 // ---------------------------------------------------------------------------
 
+function toast(
+  h: H,
+  iconHtml: Html,
+  text: string,
+  actions: ReadonlyArray<Html> = [],
+): Html {
+  return h.div(
+    [h.Class('toast')],
+    [iconHtml, h.p([h.Class('toast-text')], [text]), ...actions],
+  )
+}
+
+const dismissButton = (h: H, message: Message) =>
+  h.button(
+    [
+      h.Class('toast-dismiss'),
+      h.Type('button'),
+      h.AriaLabel('Dismiss'),
+      h.OnClick(message),
+    ],
+    [icon(h, I.X, 14)],
+  )
+
+function conversionToast(h: H, conversion: Conversion): Html {
+  const { id, fileName, status, error } = conversion
+  switch (status) {
+    case 'queued':
+      return toast(h, spinner(h, 16), `${fileName} is waiting to be converted…`)
+    case 'converting':
+      return toast(
+        h,
+        spinner(h, 16),
+        `Converting ${fileName}… This can take a few minutes.`,
+      )
+    case 'done':
+      return toast(h, icon(h, I.Check, 16), `${fileName} is ready.`, [
+        h.button(
+          [
+            h.Class('link-button'),
+            h.Type('button'),
+            h.OnClick(Message.ClickedOpenConversion({ id })),
+          ],
+          ['Open'],
+        ),
+        dismissButton(h, Message.ClickedDismissConversion({ id })),
+      ])
+    case 'failed':
+      return toast(
+        h,
+        icon(h, I.TriangleAlert, 16),
+        `Could not convert ${fileName}. ${error ?? ''}`,
+        [dismissButton(h, Message.ClickedDismissConversion({ id }))],
+      )
+  }
+}
+
+/** PDF conversions in progress and their outcomes, until dismissed. */
+function toasts(h: H, model: Model): Html {
+  return h.div(
+    [h.Class('toasts'), h.Role('status')],
+    [
+      ...(model.uploadingPdf !== null
+        ? [toast(h, spinner(h, 16), `Uploading ${model.uploadingPdf}…`)]
+        : []),
+      ...model.conversions.map((conversion) => conversionToast(h, conversion)),
+      ...(model.conversionError
+        ? [
+            toast(h, icon(h, I.TriangleAlert, 16), model.conversionError, [
+              dismissButton(h, Message.DismissedConversionError()),
+            ]),
+          ]
+        : []),
+    ],
+  )
+}
+
 export const view = (model: Model, h: H): Document => {
   const style: Record<string, string> = {}
   if (model.dockSize) style['--dock-width'] = `${model.dockSize.width}px`
@@ -1293,9 +1374,14 @@ export const view = (model: Model, h: H): Document => {
       [h.Class('app-shell')],
       [
         toolbar(h, model),
+        toasts(h, model),
         h.input([
           h.Type('file'),
-          h.Accept('.ly,text/plain'),
+          h.Accept(
+            model.conversionsEnabled
+              ? '.ly,text/plain,.pdf,application/pdf'
+              : '.ly,text/plain',
+          ),
           h.Class('visually-hidden score-file'),
           h.AriaLabel('Import LilyPond file'),
           h.OnFileChange((files) => Message.SelectedFiles({ files })),
@@ -1305,7 +1391,14 @@ export const view = (model: Model, h: H): Document => {
               [h.Class('drop-overlay'), h.AriaHidden(true)],
               [
                 icon(h, I.FileUp, 28),
-                h.span([], ['Drop a LilyPond file to open it']),
+                h.span(
+                  [],
+                  [
+                    model.conversionsEnabled
+                      ? 'Drop a LilyPond file to open it, or a PDF to convert it'
+                      : 'Drop a LilyPond file to open it',
+                  ],
+                ),
               ],
             )
           : h.empty,

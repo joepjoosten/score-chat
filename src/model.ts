@@ -4,6 +4,7 @@ import { defineRouteUnion } from 'foldkit/route'
 import { defineTaggedUnion } from 'foldkit/schema'
 import {
   ChatMessage,
+  Conversion,
   DocumentSummary,
   Me,
   Run,
@@ -194,6 +195,14 @@ export const Model = Schema.Struct({
   /** Thought processes the reader expanded, by message ID and part index. */
   expandedThinking: Schema.Array(Schema.String),
 
+  /** Whether this deployment can convert PDFs. */
+  conversionsEnabled: Schema.Boolean,
+  /** PDFs on their way to becoming documents, and outcomes not yet dismissed. */
+  conversions: Schema.Array(Conversion),
+  /** The name of the PDF being uploaded. */
+  uploadingPdf: Schema.NullOr(Schema.String),
+  conversionError: Schema.String,
+
   renderGeneration: Schema.Number,
   rendering: Schema.Boolean,
   rendered: RenderResult,
@@ -271,3 +280,9 @@ export const emptyRender: RenderResult = {
 }
 
 export const isBusy = (model: Model) => model.run?.state === 'running'
+
+/** Whether any PDF is still being worked on, which is worth polling for. */
+export const hasActiveConversion = (model: Model) =>
+  model.conversions.some(
+    ({ status }) => status === 'queued' || status === 'converting',
+  )

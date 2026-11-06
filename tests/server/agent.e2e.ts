@@ -9,7 +9,11 @@
  */
 import assert from 'node:assert/strict'
 import { readdir, readFile, stat } from 'node:fs/promises'
-import { createServer, request as httpRequest } from 'node:http'
+import {
+  createServer,
+  request as httpRequest,
+  type ServerResponse,
+} from 'node:http'
 import { join } from 'node:path'
 
 const APP = process.env.APP_URL ?? 'http://localhost:1337'
@@ -38,9 +42,26 @@ const chunk = (delta: object, finish: string | null = null) =>
   })}\n\n`
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
+// --- A stand-in for the PDF converter ----------------------------------------
+
+const CONVERTED = `\\version "2.24.4"\n\\header { title = "Converted" }\n{ c'4 }\n`
+/** While set, conversions wait, so a test can see them queued. */
+let holdConversions: Promise<void> | undefined
+let releaseConversions = () => {}
+
+const convert = async (pdf: string, response: ServerResponse) => {
+  await holdConversions
+  response.setHeader('Content-Type', 'application/json')
+  if (pdf.includes('unreadable')) {
+    response.statusCode = 422
+    response.end(JSON.stringify({ error: 'No music staves were found.' }))
+  } else response.end(JSON.stringify({ source: CONVERTED }))
+}
+
 const mock = createServer(async (request, response) => {
   let body = ''
   for await (const part of request) body += part
+  if (request.url === '/convert') return convert(body, response)
   const json = JSON.parse(body)
   requests.push({
     messages: json.messages,
@@ -376,6 +397,88 @@ try {
   )
   assert.deepEqual((await api('/api/documents')).json.documents, [])
   console.log('✓ guards and deletes documents')
+
+  // --- PDF conversion --------------------------------------------------------
+
+  const upload = async (text: string, name: string, as = cookie) => {
+    const response = await fetch(
+      `${APP}/api/conversions?name=${encodeURIComponent(name)}`,
+      {
+        method: 'POST',
+        headers: {
+          Origin: origin,
+          'Content-Type': 'application/pdf',
+          ...(as ? { Cookie: as } : {}),
+        },
+        body: text,
+      },
+    )
+    return { status: response.status, json: await response.json() }
+  }
+  const conversion = async (id: string) =>
+    (await api('/api/conversions')).json.conversions.find(
+      (known: { id: string }) => known.id === id,
+    )
+  const settled = async (id: string) => {
+    const deadline = Date.now() + 30_000
+    for (;;) {
+      const current = await conversion(id)
+      if (current.status === 'done' || current.status === 'failed')
+        return current
+      assert.ok(Date.now() < deadline, `${id} is still ${current.status}`)
+      await sleep(200)
+    }
+  }
+
+  assert.equal((await upload('%PDF-1.7 music', 'a.pdf', '')).status, 401)
+  assert.equal((await upload('not a pdf', 'a.pdf')).status, 400)
+
+  const queued = await upload('%PDF-1.7 music', 'Fur Elise.pdf')
+  assert.equal(queued.status, 202)
+  assert.equal(queued.json.fileName, 'Fur Elise.pdf')
+  assert.equal((await settled(queued.json.id)).status, 'done')
+  const converted = (await api('/api/documents')).json.documents
+  assert.deepEqual(
+    converted.map((document: { id: string; title: string }) => [
+      document.id,
+      document.title,
+    ]),
+    [[queued.json.id, 'Converted']],
+  )
+  // Its outcome is gone once dismissed, and the document stays.
+  assert.equal(
+    (await api(`/api/conversions/${queued.json.id}`, { method: 'DELETE' }))
+      .status,
+    204,
+  )
+  assert.equal(await conversion(queued.json.id), undefined)
+  assert.equal((await api('/api/documents')).json.documents.length, 1)
+
+  const rejected = await upload('%PDF-1.7 unreadable', 'blank.pdf')
+  const outcome = await settled(rejected.json.id)
+  assert.equal(outcome.status, 'failed')
+  assert.equal(outcome.error, 'No music staves were found.')
+  assert.equal((await api('/api/documents')).json.documents.length, 1)
+
+  // Nobody can dismiss what is still running, or someone else's.
+  holdConversions = new Promise((resolve) => (releaseConversions = resolve))
+  const running = [
+    await upload('%PDF-1.7 one', 'one.pdf'),
+    await upload('%PDF-1.7 two', 'two.pdf'),
+    await upload('%PDF-1.7 three', 'three.pdf'),
+  ]
+  assert.deepEqual(
+    running.map(({ status }) => status),
+    [202, 202, 202],
+  )
+  assert.equal((await upload('%PDF-1.7 four', 'four.pdf')).status, 429)
+  await api(`/api/conversions/${running[0]!.json.id}`, { method: 'DELETE' })
+  assert.ok(await conversion(running[0]!.json.id))
+  releaseConversions()
+  holdConversions = undefined
+  for (const { json } of running)
+    assert.equal((await settled(json.id)).status, 'done')
+  console.log('✓ converts PDFs through the queue')
 } catch (error) {
   // What the model was told, which usually explains a failed run.
   for (const request of requests)

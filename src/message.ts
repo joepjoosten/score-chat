@@ -2,7 +2,12 @@
 import { Schema } from 'effect'
 import { File, Navigation, Url } from 'foldkit'
 import { defineMessageUnion } from 'foldkit/message'
-import { DocumentSummary, Me, ServerEvent } from '../shared/protocol.ts'
+import {
+  Conversion,
+  DocumentSummary,
+  Me,
+  ServerEvent,
+} from '../shared/protocol.ts'
 import { Box, LocalDocument, RenderResult, SourcePosition } from './model.ts'
 
 export const Message = defineMessageUnion({
@@ -15,7 +20,10 @@ export const Message = defineMessageUnion({
   // Accounts
   GotSession: { me: Me },
   GotNoSession: {},
-  GotSignInConfig: { method: Schema.Literals(['access', 'email']) },
+  GotSignInConfig: {
+    method: Schema.Literals(['access', 'email']),
+    conversions: Schema.Boolean,
+  },
   ClickedSignIn: {},
   ClosedLogin: {},
   ChangedLoginEmail: { email: Schema.String },
@@ -49,6 +57,15 @@ export const Message = defineMessageUnion({
   ChangedFileDrag: { active: Schema.Boolean },
   ClickedDownload: {},
   ClickedErrorPosition: { position: SourcePosition },
+
+  // PDF conversion
+  UploadedPdf: { conversion: Conversion },
+  FailedUploadPdf: { error: Schema.String },
+  GotConversions: { conversions: Schema.Array(Conversion) },
+  ElapsedConversionPoll: {},
+  ClickedOpenConversion: { id: Schema.String },
+  ClickedDismissConversion: { id: Schema.String },
+  DismissedConversionError: {},
 
   // Rendering
   ElapsedRenderDebounce: { generation: Schema.Number },

@@ -12,12 +12,14 @@
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "test:server": "node scripts/with-dev-server.mjs node --experimental-strip-types tests/server/agent.e2e.ts",
     "test:e2e": "playwright test",
+    "converter:build": "docker build --platform linux/amd64 -t score-chat-converter --build-context sheet-to-ly=${SHEET_TO_LY_DIR:-../sheet-to-ly} converter",
     "renderer:sync": "node scripts/sync-renderer.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "docs:sync": "bun scripts/sync-docs.mjs"
   },
   "dependencies": {
+    "@cloudflare/containers": "^0.3.7",
     "@codemirror/autocomplete": "^6.20.3",
     "@codemirror/commands": "^6.11.1",
     "@codemirror/language": "^6.13.1",

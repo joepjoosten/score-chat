@@ -67,3 +67,4 @@ jobs:
           EMAIL_FROM: ${{ vars.EMAIL_FROM }}
           EMAIL_ZONE_ID: ${{ vars.EMAIL_ZONE_ID }}
           KEY_ENCRYPTION_SECRET: ${{ secrets.KEY_ENCRYPTION_SECRET }}
+          CONVERTER_IMAGE: ${{ vars.CONVERTER_IMAGE }}

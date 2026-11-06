@@ -1,0 +1,10 @@
+# What sheet2ly needs to read a PDF on a Linux CPU: the versions in sheet-to-ly's
+# uv.lock, without its training and evaluation tools. Torch's CPU wheels come
+# from the extra index in the Dockerfile.
+numpy==2.5.4
+onnxruntime==1.31.1
+opencv-python-headless==5.0.0.93
+pillow==13.0.0
+pymupdf==2.0
+rapidocr==3.10.0
+torch==2.15.0

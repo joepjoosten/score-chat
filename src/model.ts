@@ -7,6 +7,7 @@ import {
   Conversion,
   DocumentSummary,
   Me,
+  Review,
   Run,
   SelectedNote,
 } from '../shared/protocol.ts'
@@ -55,7 +56,7 @@ export type Size = typeof Size.Type
 
 /** Preferences kept in this browser's local storage. */
 export const Prefs = Schema.Struct({
-  view: Schema.Literals(['score', 'source']),
+  view: Schema.Literals(['score', 'source', 'review']),
   /** How rendered pages are shown: as images, or inline SVG for inspection. */
   pages: Schema.Literals(['image', 'inline']),
   /** Size of the assistant dock after the user resizes it, in pixels. */
@@ -186,6 +187,7 @@ export const Model = Schema.Struct({
     Schema.Struct({
       text: Schema.String,
       selection: Schema.Array(SelectedNote),
+      original: Schema.optionalKey(Schema.Number),
     }),
   ),
   chatError: Schema.String,
@@ -194,6 +196,14 @@ export const Model = Schema.Struct({
   unread: Schema.Boolean,
   /** Thought processes the reader expanded, by message ID and part index. */
   expandedThinking: Schema.Array(Schema.String),
+
+  /** The scans and doubts of a converted score, until its review is finished. */
+  review: Schema.NullOr(Review),
+  reviewFilter: Schema.Literals(['flagged', 'all']),
+  /** The system whose scan goes along with the next message. */
+  attachedSystem: Schema.NullOr(Schema.Number),
+  /** Finishing a review deletes the scans, so it asks first. */
+  confirmingFinish: Schema.Boolean,
 
   /** Whether this deployment can convert PDFs. */
   conversionsEnabled: Schema.Boolean,
@@ -278,6 +288,10 @@ export const emptyRender: RenderResult = {
   positions: [],
   anchors: [],
 }
+
+/** The preferred view, or the sheet music for a document with nothing to review. */
+export const activeView = (model: Model) =>
+  model.prefs.view === 'review' && !model.review ? 'score' : model.prefs.view
 
 export const isBusy = (model: Model) => model.run?.state === 'running'
 

@@ -21,7 +21,7 @@ export function readPrefs(storage: Pick<Storage, 'getItem'>): Prefs {
     >
     const dock = Schema.decodeUnknownOption(Prefs.fields.dock)(raw.dock ?? null)
     return {
-      view: raw.view === 'source' ? 'source' : 'score',
+      view: raw.view === 'source' || raw.view === 'review' ? raw.view : 'score',
       pages: raw.pages === 'inline' ? 'inline' : 'image',
       dock: dock._tag === 'Some' ? dock.value : null,
       corner:

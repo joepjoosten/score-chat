@@ -159,6 +159,8 @@ CONVERTER_IMAGE=score-chat-converter npm run deploy -- --stage prod
 
 Alchemy pushes the local image to Cloudflare's registry. CI has neither the weights nor that local image, so set the `CONVERTER_IMAGE` variable there to the `registry.cloudflare.com/...` reference of the pushed image. Without `CONVERTER_IMAGE`, a deploy removes the container and turns conversion off. Locally, and in the tests, `CONVERTER_URL` points the queue's consumer at another converter instead, such as `docker run -p 8080:8080 score-chat-converter` or a stand-in.
 
+A converted score opens on its **Review** tab, with the scan of each system directly above the same system of the live score, so hand and assistant edits show right away. The recognizer's doubts come first; **Fix with AI** sends a system's scan to the model, which has to be one that can read images, and **Looks right** ticks it off. The converter marks each system with a `% system N` comment and a `\\break`, and the comments are what link the scan to the score as it changes. The scans stay in the document's Durable Object until the document is deleted or **Finish review** removes them, along with the comments.
+
 `.github/workflows/deploy.yml` runs formatting, unit tests, the build, and the server and browser tests on every push and pull request. Pushes to `main` then deploy the `prod` stage. It needs:
 
 - the secrets `CLOUDFLARE_API_TOKEN` and `KEY_ENCRYPTION_SECRET`;

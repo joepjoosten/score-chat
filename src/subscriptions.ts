@@ -2,7 +2,7 @@
 import { Effect, Queue, Schema, Stream } from 'effect'
 import { Subscription } from 'foldkit'
 import { Message } from './message.ts'
-import { hasActiveConversion, isBusy, type Model } from './model.ts'
+import { activeView, hasActiveConversion, isBusy, type Model } from './model.ts'
 import * as Player from './player.ts'
 import {
   DocumentSocket,
@@ -193,7 +193,9 @@ export const subscriptions = Subscription.make<
   pageKeys: entry(
     { score: Schema.Boolean },
     {
-      modelToDependencies: (model) => ({ score: model.prefs.view === 'score' }),
+      modelToDependencies: (model) => ({
+        score: activeView(model) === 'score',
+      }),
       dependenciesToStream: ({ score }) => (score ? pageKeys : Stream.empty),
     },
   ),

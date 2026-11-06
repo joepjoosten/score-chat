@@ -92,8 +92,18 @@ export const Message = defineMessageUnion({
   ClickedShowChat: {},
   ToggledThinking: { key: Schema.String },
 
+  // Review of a converted score
+  ChangedReviewFilter: { filter: Schema.Literals(['flagged', 'all']) },
+  ClickedFixSystem: { system: Schema.Number },
+  ClickedAskAboutSystem: { system: Schema.Number },
+  ClearedAttachedSystem: {},
+  ClickedMarkReviewed: { system: Schema.Number, reviewed: Schema.Boolean },
+  ClickedFinishReview: {},
+  CanceledFinishReview: {},
+  ConfirmedFinishReview: {},
+
   // Score view
-  ChangedView: { view: Schema.Literals(['score', 'source']) },
+  ChangedView: { view: Schema.Literals(['score', 'source', 'review']) },
   ClickedZoom: { step: Schema.Number },
   TurnedPage: { step: Schema.Number },
   MeasuredCanvas: { width: Schema.Number },

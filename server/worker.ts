@@ -352,6 +352,33 @@ const Routes = Layer.mergeAll(
       }),
     ),
   ),
+  // A scanned staff of a converted score, for as long as its review lasts.
+  HttpRouter.add(
+    'GET',
+    '/api/documents/:id/scans/:system/:staff',
+    handleErrors(
+      Effect.gen(function* () {
+        const user = yield* currentUser
+        const { id, system, staff } = yield* HttpRouter.schemaPathParams(
+          Schema.Struct({
+            id: Schema.String,
+            system: Schema.String,
+            staff: Schema.String,
+          }),
+        )
+        yield* requireOwnDocument(user.id, id)
+        const image = yield* Effect.promise(() =>
+          env.DOCUMENT_AGENT.getByName(id).scan(Number(system), Number(staff)),
+        )
+        if (!image) return yield* new NotFound()
+        return HttpServerResponse.uint8Array(image, {
+          contentType: 'image/jpeg',
+          // A scan never changes, and a document ID is never used again.
+          headers: { 'Cache-Control': 'private, max-age=86400' },
+        })
+      }),
+    ),
+  ),
   HttpRouter.add(
     'GET',
     '/api/documents/:id/socket',

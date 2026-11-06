@@ -15,6 +15,7 @@ import {
   scoreTitle,
   type Conversion,
   type ConversionStatus,
+  type Review,
 } from '../shared/protocol.ts'
 import { insertDocument } from './accounts.ts'
 import type { Env } from './env.ts'
@@ -160,8 +161,21 @@ async function callConverter(env: Env, pdf: ArrayBuffer): Promise<Response> {
   return converter.fetch('http://converter/convert', init)
 }
 
+/** What the converter says about one `% system N` marker in the source. */
+interface ConvertedSystem {
+  readonly system: number
+  readonly confidence: number
+  readonly flags: readonly string[]
+  /** Base64 JPEGs, one per staff. */
+  readonly images: readonly string[]
+}
+
 type Outcome =
-  | { readonly _tag: 'Converted'; readonly source: string }
+  | {
+      readonly _tag: 'Converted'
+      readonly source: string
+      readonly systems: readonly ConvertedSystem[]
+    }
   | { readonly _tag: 'Rejected'; readonly error: string }
   | { readonly _tag: 'Unavailable'; readonly reason: string }
 
@@ -188,8 +202,46 @@ async function convert(env: Env, pdf: ArrayBuffer): Promise<Outcome> {
   }
   if (!response.ok)
     return { _tag: 'Unavailable', reason: `HTTP ${response.status}` }
-  const { source } = (await response.json()) as { source: string }
-  return { _tag: 'Converted', source }
+  const { source, systems } = (await response.json()) as {
+    source: string
+    // Absent from an image built before reviews existed.
+    systems?: readonly ConvertedSystem[]
+  }
+  return { _tag: 'Converted', source, systems: systems ?? [] }
+}
+
+const decodeBase64 = (text: string) =>
+  Uint8Array.from(atob(text), (char) => char.charCodeAt(0))
+
+/** A new document, with what it takes to compare it against the scan. */
+async function createDocument(
+  env: Env,
+  id: string,
+  ownerId: string,
+  source: string,
+  systems: readonly ConvertedSystem[],
+) {
+  const review: Review = {
+    source,
+    systems: systems.map(({ system, confidence, flags, images }) => ({
+      system,
+      confidence,
+      flags,
+      staves: images.length,
+      reviewed: false,
+    })),
+  }
+  const agent = env.DOCUMENT_AGENT.getByName(id)
+  await agent.initialize(
+    id,
+    ownerId,
+    source,
+    systems.length ? review : undefined,
+  )
+  // One call per image: all of a long score would exceed what a single call can carry.
+  for (const { system, images } of systems)
+    for (const [staff, image] of images.entries())
+      await agent.addScan(system, staff, decodeBase64(image))
 }
 
 const setStatus = (
@@ -252,10 +304,12 @@ const handleMessage = (
           break
         }
         yield* Effect.promise(() =>
-          env.DOCUMENT_AGENT.getByName(id).initialize(
+          createDocument(
+            env,
             id,
             job.owner_id,
             outcome.source,
+            outcome.systems,
           ),
         )
         yield* insertDocument(

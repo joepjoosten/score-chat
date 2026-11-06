@@ -17,6 +17,7 @@ import {
   type ClientCommand,
   type MessagePart,
   type PartKind,
+  type Review,
   type Run,
   type SelectedNote,
   type ServerEvent,
@@ -25,8 +26,9 @@ import { agentCredentials, touchDocument } from './accounts.ts'
 import { describeFailure, runAgent } from './agent.ts'
 import { assetFetcher, check, loadDocs } from './assets.ts'
 import type { Env } from './env.ts'
-import { history, systemPrompt } from './prompt.ts'
+import { history, systemPrompt, type AttachedScan } from './prompt.ts'
 import { classifyErrors, type CheckPosition } from './renderer/check.js'
+import { describeSystem, stripSystemMarkers } from '../shared/review.ts'
 import type { ApplyOutcome } from './tools.ts'
 
 /** The header the Worker sets to the signed-in user it checked. */
@@ -45,6 +47,12 @@ const SNAPSHOT_MESSAGES = 200
 const MAX_RESUMES = 3
 /** The document index is updated at most this often while the score changes. */
 const TOUCH_DELAY = 2000
+
+/**
+ * A run's prompt, scans included, is stored as one row with a 2 MB limit. A
+ * system with more than this in scans goes to the model with the first staves.
+ */
+const MAX_SCAN_BYTES = 1_000_000
 
 const PING = JSON.stringify({ _tag: 'Ping' })
 const PONG = JSON.stringify({ _tag: 'Pong' })
@@ -100,6 +108,12 @@ function migrate(sql: SqlStorage) {
       checkpoint TEXT NOT NULL,
       updated_at INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS scans (
+      system INTEGER NOT NULL,
+      staff INTEGER NOT NULL,
+      image BLOB NOT NULL,
+      PRIMARY KEY (system, staff)
+    );
   `)
 }
 
@@ -129,13 +143,41 @@ export class DocumentAgent extends DurableObject<Env> {
   // RPC from the Worker
 
   /** Sets up a new document. Calling it again does nothing. */
-  async initialize(documentId: string, ownerId: string, source: string) {
+  async initialize(
+    documentId: string,
+    ownerId: string,
+    source: string,
+    review?: Review,
+  ) {
     if (this.meta('owner')) return
     this.setMeta('id', documentId)
     this.setMeta('owner', ownerId)
     this.setMeta('source', source)
     this.setMeta('revision', '1')
     this.setMeta('seq', '0')
+    if (review) this.setMeta('review', JSON.stringify(review))
+  }
+
+  /** Stores one staff of a system's scan. A repeated conversion overwrites it. */
+  async addScan(system: number, staff: number, image: Uint8Array) {
+    this.sql.exec(
+      'INSERT OR REPLACE INTO scans (system, staff, image) VALUES (?, ?, ?)',
+      system,
+      staff,
+      image,
+    )
+  }
+
+  /** One staff of a system's scan, or null once the review is finished. */
+  async scan(system: number, staff: number): Promise<Uint8Array | null> {
+    const row = this.sql
+      .exec<{ image: ArrayBuffer }>(
+        'SELECT image FROM scans WHERE system = ? AND staff = ?',
+        system,
+        staff,
+      )
+      .toArray()[0]
+    return row ? new Uint8Array(row.image) : null
   }
 
   /** Deletes the document: stops its run, disconnects browsers and erases storage. */
@@ -199,7 +241,12 @@ export class DocumentAgent extends DurableObject<Env> {
       case 'Hello':
         return this.hello(socket, command.since)
       case 'Send':
-        return this.send(socket, command.text, command.selection)
+        return this.send(
+          socket,
+          command.text,
+          command.selection,
+          command.original,
+        )
       case 'Stop':
         return this.stop()
       case 'SetSource':
@@ -214,6 +261,10 @@ export class DocumentAgent extends DurableObject<Env> {
       }
       case 'ClearChat':
         return this.clearChat(socket)
+      case 'MarkReviewed':
+        return this.markReviewed(command.system, command.reviewed)
+      case 'FinishReview':
+        return this.finishReview(socket)
       case 'Ping':
         return socket.send(PONG)
     }
@@ -263,6 +314,7 @@ export class DocumentAgent extends DurableObject<Env> {
       },
       messages,
       run: this.activeRun() ?? null,
+      review: this.review() ?? null,
     }
   }
 
@@ -270,6 +322,7 @@ export class DocumentAgent extends DurableObject<Env> {
     socket: WebSocket,
     text: string,
     selection: readonly SelectedNote[],
+    original?: number,
   ) {
     if (this.activeRun())
       return this.problem(
@@ -283,6 +336,7 @@ export class DocumentAgent extends DurableObject<Env> {
       role: 'user',
       text: text.trim(),
       ...(selection.length ? { selection } : {}),
+      ...(original === undefined ? {} : { original }),
     }
     const assistant: ChatMessage = {
       id: crypto.randomUUID(),
@@ -295,8 +349,11 @@ export class DocumentAgent extends DurableObject<Env> {
     this.saveMessage(assistant)
     this.emit({ _tag: 'MessageAdded', message: assistant })
     const prompt = Prompt.make([
-      { role: 'system', content: systemPrompt(this.source()) },
-      ...history([...earlier, user]),
+      {
+        role: 'system',
+        content: systemPrompt(this.source(), this.review() !== undefined),
+      },
+      ...history([...earlier, user], this.attachedScan([...earlier, user])),
     ])
     const run: Run = {
       id: crypto.randomUUID(),
@@ -316,6 +373,63 @@ export class DocumentAgent extends DurableObject<Env> {
     this.emit({ _tag: 'RunChanged', run })
     void this.ctx.storage.setAlarm(Date.now() + HEARTBEAT)
     this.start(run, checkpoint)
+  }
+
+  /**
+   * The scan a turn should see: the one on the latest message that came with
+   * one, so a follow-up such as "bar 2 is still wrong" can look at it again.
+   */
+  private attachedScan(messages: readonly ChatMessage[]) {
+    const review = this.review()
+    const message = [...messages]
+      .reverse()
+      .find((candidate) => candidate.original !== undefined)
+    if (!review || message?.original === undefined) return undefined
+    const images: Uint8Array[] = []
+    let bytes = 0
+    for (const { image } of this.sql.exec<{ image: ArrayBuffer }>(
+      'SELECT image FROM scans WHERE system = ? ORDER BY staff',
+      message.original,
+    )) {
+      bytes += image.byteLength
+      if (bytes > MAX_SCAN_BYTES) break
+      images.push(new Uint8Array(image))
+    }
+    if (!images.length) return undefined
+    return {
+      messageId: message.id,
+      note: describeSystem(review, message.original, this.source()),
+      images,
+    } satisfies AttachedScan
+  }
+
+  private markReviewed(system: number, reviewed: boolean) {
+    const review = this.review()
+    if (!review) return
+    this.setMeta(
+      'review',
+      JSON.stringify({
+        ...review,
+        systems: review.systems.map((entry) =>
+          entry.system === system ? { ...entry, reviewed } : entry,
+        ),
+      } satisfies Review),
+    )
+    this.emit({ _tag: 'SystemReviewed', system, reviewed })
+  }
+
+  private finishReview(socket: WebSocket) {
+    if (!this.review()) return
+    if (this.activeRun())
+      return this.problem(
+        socket,
+        'Stop the assistant before finishing the review.',
+      )
+    this.sql.exec('DELETE FROM scans')
+    this.sql.exec("DELETE FROM meta WHERE key = 'review'")
+    this.emit({ _tag: 'ReviewFinished' })
+    const source = stripSystemMarkers(this.source())
+    if (source !== this.source()) this.setSource(source, 'agent')
   }
 
   private stop() {
@@ -366,6 +480,12 @@ export class DocumentAgent extends DurableObject<Env> {
     const ownerId = this.meta('owner')!
     const documentId = this.meta('id')!
     const fetchAsset = assetFetcher(this.env.ASSETS)
+    const prompt = Schema.decodeSync(PromptJson)(checkpoint.prompt)
+    const sentImage = prompt.content.some(
+      (message) =>
+        message.role === 'user' &&
+        message.content.some((part) => part.type === 'file'),
+    )
     const program = Effect.gen(function* () {
       const credentials = yield* agentCredentials(
         ownerId,
@@ -376,7 +496,7 @@ export class DocumentAgent extends DurableObject<Env> {
         apiKey: credentials.apiKey,
         model: credentials.model,
         reasoning: credentials.reasoning,
-        prompt: Schema.decodeSync(PromptJson)(checkpoint.prompt),
+        prompt,
         spoke: checkpoint.spoke,
         step: checkpoint.step,
         apiUrl: self.env.OPENROUTER_URL || undefined,
@@ -425,7 +545,7 @@ export class DocumentAgent extends DurableObject<Env> {
         )
       // Provider errors can contain request details; log the kind, not the key.
       console.error('Agent run failed', documentId, String(error).slice(0, 500))
-      this.finishRun(current, 'failed', describeFailure(error))
+      this.finishRun(current, 'failed', describeFailure(error, sentImage))
     })
   }
 
@@ -564,6 +684,10 @@ export class DocumentAgent extends DurableObject<Env> {
   }
 
   private source = () => this.meta('source') ?? ''
+  private review = (): Review | undefined => {
+    const stored = this.meta('review')
+    return stored ? (JSON.parse(stored) as Review) : undefined
+  }
   private revision = () => Number(this.meta('revision') ?? 0)
   private seq = () => Number(this.meta('seq') ?? 0)
 

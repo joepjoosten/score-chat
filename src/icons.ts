@@ -29,6 +29,7 @@ export {
   Settings2,
   SkipBack,
   SlidersHorizontal,
+  ScanLine,
   Sparkles,
   Square,
   Trash2,

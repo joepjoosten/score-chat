@@ -57,6 +57,8 @@ export const ChatMessage = Schema.Struct({
   selection: Schema.optionalKey(Schema.Array(SelectedNote)),
   /** Assistant output in arrival order: text and thinking. */
   parts: Schema.optionalKey(Schema.Array(MessagePart)),
+  /** The system whose scan was attached to a user message. */
+  original: Schema.optionalKey(Schema.Number),
 })
 export type ChatMessage = typeof ChatMessage.Type
 
@@ -127,6 +129,27 @@ export const ConversionList = Schema.Struct({
 })
 
 // ---------------------------------------------------------------------------
+// Review of a converted score
+
+/** One `% system N` marker's scan and what the recognizer doubts about it. */
+export const ReviewSystem = Schema.Struct({
+  system: Schema.Number,
+  confidence: Schema.Number,
+  flags: Schema.Array(Schema.String),
+  /** How many scanned staves there are to show. */
+  staves: Schema.Number,
+  reviewed: Schema.Boolean,
+})
+export type ReviewSystem = typeof ReviewSystem.Type
+
+export const Review = Schema.Struct({
+  /** The score as converted, to tell which systems were edited since. */
+  source: Schema.String,
+  systems: Schema.Array(ReviewSystem),
+})
+export type Review = typeof Review.Type
+
+// ---------------------------------------------------------------------------
 // Accounts
 
 export const User = Schema.Struct({ id: Schema.String, email: Schema.String })
@@ -193,6 +216,8 @@ export const ClientCommand = Schema.TaggedUnion({
   Send: {
     text: Schema.String.check(Schema.isMaxLength(MAX_MESSAGE_LENGTH)),
     selection: Schema.Array(SelectedNote),
+    /** A system whose scan the assistant should see. */
+    original: Schema.optionalKey(Schema.Number),
   },
   Stop: {},
   /** A hand edit, based on the revision the browser last saw. */
@@ -208,6 +233,9 @@ export const ClientCommand = Schema.TaggedUnion({
     positions: Schema.optionalKey(Schema.Array(Schema.NullOr(SourceSpan))),
   },
   ClearChat: {},
+  MarkReviewed: { system: Schema.Number, reviewed: Schema.Boolean },
+  /** Deletes the scans and takes the system markers out of the score. */
+  FinishReview: {},
   Ping: {},
 })
 export type ClientCommand = typeof ClientCommand.Type
@@ -233,6 +261,8 @@ export const ServerEvent = Schema.TaggedUnion({
     document: DocumentState,
     messages: Schema.Array(ChatMessage),
     run: Schema.NullOr(Run),
+    /** Absent or null: this document has nothing to review. */
+    review: Schema.optionalKey(Schema.NullOr(Review)),
   },
   /** Sent after a replay, so the browser knows it is up to date. */
   Replayed: { seq: Schema.Number },
@@ -254,6 +284,12 @@ export const ServerEvent = Schema.TaggedUnion({
   MessageReplaced: { seq: Schema.Number, message: ChatMessage },
   RunChanged: { seq: Schema.Number, run: Run },
   ChatCleared: { seq: Schema.Number },
+  SystemReviewed: {
+    seq: Schema.Number,
+    system: Schema.Number,
+    reviewed: Schema.Boolean,
+  },
+  ReviewFinished: { seq: Schema.Number },
   /** A command that could not be carried out; not stored. */
   Problem: { message: Schema.String },
   Pong: {},

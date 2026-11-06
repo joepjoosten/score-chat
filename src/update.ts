@@ -250,6 +250,10 @@ function closeDocument(model: Model): Model {
     run: null,
     chatError: '',
     expandedThinking: [],
+    review: null,
+    reviewFilter: 'flagged',
+    attachedSystem: null,
+    confirmingFinish: false,
     selected: [],
     marquee: null,
     page: 0,
@@ -424,6 +428,7 @@ function receive(model: Model, event: ServerEvent): Return {
           sent: [],
           messages: event.messages,
           run: event.run,
+          review: event.review ?? null,
         })
       const base: Model = {
         ...seen,
@@ -436,6 +441,7 @@ function receive(model: Model, event: ServerEvent): Return {
         sent: [],
         messages: event.messages,
         run: event.run,
+        review: event.review ?? null,
       }
       const readOnly = SetEditorReadOnly({
         readOnly: event.run?.state === 'running',
@@ -546,10 +552,107 @@ function receive(model: Model, event: ServerEvent): Return {
       return {
         model: { ...seen, messages: [], chatError: '', expandedThinking: [] },
       }
+    case 'SystemReviewed':
+      return {
+        model: {
+          ...seen,
+          review: seen.review && {
+            ...seen.review,
+            systems: seen.review.systems.map((entry) =>
+              entry.system === event.system
+                ? { ...entry, reviewed: event.reviewed }
+                : entry,
+            ),
+          },
+        },
+      }
+    case 'ReviewFinished':
+      return {
+        model: {
+          ...seen,
+          review: null,
+          attachedSystem: null,
+          confirmingFinish: false,
+        },
+      }
     case 'Problem':
       return { model: { ...seen, chatError: event.message, chatOpen: true } }
     case 'Pong':
       return { model: seen }
+  }
+}
+
+const attachedScan = (model: Model) =>
+  model.attachedSystem === null ? {} : { original: model.attachedSystem }
+
+/** Sends what is in the composer, or holds on to it until that is possible. */
+function submitMessage(model: Model): Return {
+  const text = model.input.trim()
+  if (!text || isBusy(model)) return { model }
+  // Goes with this message only.
+  const scan = attachedScan(model)
+  // Still finding out who is signed in: send it once the document is open.
+  if (model.session._tag === 'Checking')
+    return {
+      model: {
+        ...model,
+        input: '',
+        attachedSystem: null,
+        chatOpen: true,
+        queued: { text, selection: highlightedNotes(model), ...scan },
+      },
+    }
+  if (model.session._tag !== 'SignedIn')
+    return {
+      model: {
+        ...model,
+        loginOpen: true,
+        loginState: 'idle',
+        loginReason:
+          'Sign in to use the assistant. Your documents in this browser move to your account.',
+      },
+    }
+  if (model.documentKind !== 'remote')
+    return {
+      model: {
+        ...model,
+        chatError: 'Open a document from your account to use the assistant.',
+      },
+    }
+  if (!model.session.me.settings.hasApiKey)
+    return {
+      model: {
+        ...model,
+        settingsOpen: true,
+        settingsDraft: settingsDraft(model),
+        settingsError: '',
+      },
+    }
+  if (model.socket._tag !== 'Connected' || model.loading)
+    return {
+      model: {
+        ...model,
+        input: '',
+        attachedSystem: null,
+        chatError: '',
+        chatOpen: true,
+        queued: { text, selection: highlightedNotes(model), ...scan },
+      },
+    }
+  return {
+    model: {
+      ...model,
+      input: '',
+      attachedSystem: null,
+      chatError: '',
+      chatOpen: true,
+    },
+    commands: send(model, {
+      _tag: 'Send',
+      text,
+      selection: highlightedNotes(model),
+      ...scan,
+    }),
   }
 }
 
@@ -915,8 +1018,13 @@ export const update = (model: Model, message: Message): Return =>
       }
     },
     ClickedOpenConversion: ({ id }) => ({
-      model: withoutConversion(model, id),
+      // A new conversion is worth checking against its scan first.
+      model: {
+        ...withoutConversion(model, id),
+        prefs: { ...model.prefs, view: 'review' },
+      },
       commands: [
+        Commands.SavePrefs({ prefs: { ...model.prefs, view: 'review' } }),
         Commands.DismissConversion({ id }),
         Commands.PushUrl({ url: documentUrl(id) }),
       ],
@@ -1057,65 +1165,7 @@ export const update = (model: Model, message: Message): Return =>
 
     // Chat ----------------------------------------------------------------------------
     ChangedInput: ({ value }) => ({ model: { ...model, input: value } }),
-    SubmittedMessage: () => {
-      const text = model.input.trim()
-      if (!text || isBusy(model)) return { model }
-      // Still finding out who is signed in: send it once the document is open.
-      if (model.session._tag === 'Checking')
-        return {
-          model: {
-            ...model,
-            input: '',
-            chatOpen: true,
-            queued: { text, selection: highlightedNotes(model) },
-          },
-        }
-      if (model.session._tag !== 'SignedIn')
-        return {
-          model: {
-            ...model,
-            loginOpen: true,
-            loginState: 'idle',
-            loginReason:
-              'Sign in to use the assistant. Your documents in this browser move to your account.',
-          },
-        }
-      if (model.documentKind !== 'remote')
-        return {
-          model: {
-            ...model,
-            chatError:
-              'Open a document from your account to use the assistant.',
-          },
-        }
-      if (!model.session.me.settings.hasApiKey)
-        return {
-          model: {
-            ...model,
-            settingsOpen: true,
-            settingsDraft: settingsDraft(model),
-            settingsError: '',
-          },
-        }
-      if (model.socket._tag !== 'Connected' || model.loading)
-        return {
-          model: {
-            ...model,
-            input: '',
-            chatError: '',
-            chatOpen: true,
-            queued: { text, selection: highlightedNotes(model) },
-          },
-        }
-      return {
-        model: { ...model, input: '', chatError: '', chatOpen: true },
-        commands: send(model, {
-          _tag: 'Send',
-          text,
-          selection: highlightedNotes(model),
-        }),
-      }
-    },
+    SubmittedMessage: () => submitMessage(model),
     PressedComposerEscape: () => ({ model: { ...model, chatOpen: false } }),
     ClickedStop: () => ({ model, commands: send(model, { _tag: 'Stop' }) }),
     ClickedClearChat: () => ({
@@ -1143,6 +1193,44 @@ export const update = (model: Model, message: Message): Return =>
           ? model.expandedThinking.filter((open) => open !== key)
           : [...model.expandedThinking, key],
       },
+    }),
+
+    // Review of a converted score ------------------------------------------------------
+    ChangedReviewFilter: ({ filter }) => ({
+      model: { ...model, reviewFilter: filter },
+    }),
+    ClickedFixSystem: ({ system }) =>
+      submitMessage({
+        ...model,
+        chatHidden: false,
+        attachedSystem: system,
+        input: `Compare system ${system} with its scan and fix what the recognition got wrong.`,
+      }),
+    ClickedAskAboutSystem: ({ system }) => ({
+      model: {
+        ...model,
+        attachedSystem: system,
+        chatHidden: false,
+        chatOpen: true,
+      },
+      commands: [Commands.FocusComposer()],
+    }),
+    ClearedAttachedSystem: () => ({
+      model: { ...model, attachedSystem: null },
+    }),
+    ClickedMarkReviewed: ({ system, reviewed }) => ({
+      model,
+      commands: send(model, { _tag: 'MarkReviewed', system, reviewed }),
+    }),
+    ClickedFinishReview: () => ({
+      model: { ...model, confirmingFinish: true },
+    }),
+    CanceledFinishReview: () => ({
+      model: { ...model, confirmingFinish: false },
+    }),
+    ConfirmedFinishReview: () => ({
+      model: { ...model, confirmingFinish: false },
+      commands: send(model, { _tag: 'FinishReview' }),
     }),
 
     // Score view ----------------------------------------------------------------------

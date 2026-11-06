@@ -100,8 +100,11 @@ export const runAgent = (run: AgentRun) =>
     Effect.provide(languageModel(run)),
   )
 
+const CANNOT_READ_IMAGES =
+  'The model could not work with the scan of this system. Choose a model that can read images in Settings, then try again.'
+
 /** A message for the user about a failed run. Never includes request details or the key. */
-export function describeFailure(error: unknown): string {
+export function describeFailure(error: unknown, sentImage = false): string {
   if (AiError.isAiError(error))
     switch (error.reason._tag) {
       case 'AuthenticationError':
@@ -113,7 +116,9 @@ export function describeFailure(error: unknown): string {
       case 'ContentPolicyError':
         return 'The model provider declined this request.'
       case 'InvalidRequestError':
+        if (sentImage) return CANNOT_READ_IMAGES
         return 'The model rejected the request. Check that the model in Settings supports tool calling.'
     }
+  if (sentImage) return CANNOT_READ_IMAGES
   return 'The assistant could not complete the request. Check your model’s tool support, OpenRouter credits and connection, then try again.'
 }

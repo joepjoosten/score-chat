@@ -9,6 +9,37 @@ import { createServer, type Server } from 'node:http'
 export const MOCK_PORT = Number(process.env.MOCK_OPENROUTER_PORT ?? 8788)
 const CONTROL = `http://127.0.0.1:${MOCK_PORT}`
 
+/** A staff's worth of scan: a small grey JPEG. */
+const SCAN =
+  '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'
+/** What the converter answers for a PDF with systems to review. */
+const SCANNED = {
+  source: [
+    '\\version "2.24.4"',
+    '\\header { title = "Scanned score" }',
+    '\\score {',
+    '\\new Staff {',
+    '    % system 1',
+    "    c'4 d' e' f' |",
+    '    % system 2',
+    '    \\break',
+    "    g'4 a' b' c'' |",
+    '  }',
+    '\\layout { }',
+    '}',
+    '',
+  ].join('\n'),
+  systems: [
+    {
+      system: 1,
+      confidence: 0.7,
+      flags: ['Bar 1 adds up to 5/4, not 1'],
+      images: [SCAN],
+    },
+    { system: 2, confidence: 0.95, flags: [], images: [SCAN] },
+  ],
+}
+
 export type Reply =
   /** Server-sent events, sent one by one `delay` ms apart; `held` waits for release(). */
   | { events: string[]; delay?: number; held?: boolean }
@@ -73,9 +104,13 @@ export function startOpenRouter(): Promise<Server> {
         )
       }
       return response.end(
-        JSON.stringify({
-          source: `\\version "2.24.4"\n\\header { title = "Converted score" }\n{ c'4 d' e' f' }\n`,
-        }),
+        JSON.stringify(
+          pdf.includes('scanned')
+            ? SCANNED
+            : {
+                source: `\\version "2.24.4"\n\\header { title = "Converted score" }\n{ c'4 d' e' f' }\n`,
+              },
+        ),
       )
     }
     if (url.pathname !== '/api/v1/chat/completions') {

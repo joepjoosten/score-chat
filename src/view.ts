@@ -11,7 +11,10 @@ import {
   scoreTitle,
   type ChatMessage,
   type Conversion,
+  type Review,
+  type ReviewSystem,
 } from '../shared/protocol.ts'
+import { isEdited, systemCrops, systemRanges } from '../shared/review.ts'
 import {
   anchorKey,
   markerStrokes,
@@ -22,7 +25,7 @@ import * as I from './icons.ts'
 import { icon } from './icons.ts'
 import { markdown } from './markdown.ts'
 import { Message } from './message.ts'
-import { isBusy, type Model } from './model.ts'
+import { activeView, isBusy, type Model, type RenderResult } from './model.ts'
 import {
   FollowConversation,
   MarkerOverlay,
@@ -195,7 +198,7 @@ function documentsMenu(h: H, model: Model): Html {
 
 function toolbar(h: H, model: Model): Html {
   const busy = isBusy(model)
-  const view = model.prefs.view
+  const view = activeView(model)
   const pageCount = model.rendered.pages.length
   const first = firstPage(model)
   const shown = Math.min(spread(model), Math.max(0, pageCount - first))
@@ -254,6 +257,19 @@ function toolbar(h: H, model: Model): Html {
             ],
             [icon(h, I.Code2, 15), h.span([], ['LilyPond'])],
           ),
+          model.review
+            ? h.button(
+                [
+                  h.Id('review-tab'),
+                  h.Role('tab'),
+                  h.AriaLabel('Review'),
+                  h.AriaSelected(view === 'review'),
+                  h.AriaControls('review-panel'),
+                  h.OnClick(Message.ChangedView({ view: 'review' })),
+                ],
+                [icon(h, I.ScanLine, 15), h.span([], ['Review'])],
+              )
+            : h.empty,
         ],
       ),
       h.div(
@@ -406,6 +422,332 @@ function toolbar(h: H, model: Model): Html {
 }
 
 // ---------------------------------------------------------------------------
+// Review
+
+/**
+ * Each card shows a slice of a full page, so a page is one image for all of
+ * them to share. It lasts until its page changes.
+ */
+let pageUrls = new Map<string, string>()
+function urlsFor(pages: readonly string[]): readonly string[] {
+  const next = new Map(
+    pages.map((svg) => [
+      svg,
+      pageUrls.get(svg) ??
+        URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' })),
+    ]),
+  )
+  for (const [svg, url] of pageUrls)
+    if (!next.has(svg)) URL.revokeObjectURL(url)
+  pageUrls = next
+  return pages.map((svg) => next.get(svg)!)
+}
+
+const systemResult = (
+  h: H,
+  system: ReviewSystem,
+  source: string,
+  rendered: RenderResult,
+  urls: readonly string[],
+): Html => {
+  const ranges = systemRanges(source).get(system.system)
+  if (!ranges)
+    return h.p(
+      [h.Class('review-note')],
+      [
+        `This score no longer has its “% system ${system.system}” comment, so this system can't be matched to it.`,
+      ],
+    )
+  const crops = systemCrops(ranges, rendered.anchors)
+  if (!crops.length)
+    return h.p(
+      [h.Class('review-note')],
+      ['Nothing to show for this system until the score engraves.'],
+    )
+  return h.div(
+    [],
+    crops.map(({ page, y, height }) => {
+      const viewBox = rendered.pages[page]?.match(/viewBox="([^"]+)"/)?.[1]
+      const width = Number(viewBox?.split(' ')[2] ?? 1)
+      return h.div(
+        [
+          h.Class('system-crop'),
+          h.Style({ 'aspect-ratio': `${width} / ${height}` }),
+        ],
+        [
+          h.img([
+            h.Alt(`Your score, system ${system.system}`),
+            h.Src(urls[page] ?? ''),
+            h.Style({ top: `${(-y / height) * 100}%` }),
+          ]),
+        ],
+      )
+    }),
+  )
+}
+
+interface ReviewView {
+  readonly review: Review
+  readonly source: string
+  readonly rendered: RenderResult
+  readonly documentId: string | null
+  readonly filter: Model['reviewFilter']
+  readonly fresh: boolean
+  readonly busy: boolean
+  readonly connected: boolean
+  readonly confirmingFinish: boolean
+}
+
+const systemCard = (
+  h: H,
+  view: ReviewView,
+  system: ReviewSystem,
+  urls: readonly string[],
+): Html => {
+  const edited = isEdited(view.review, system.system, view.source)
+  const status = system.reviewed
+    ? 'reviewed'
+    : edited
+      ? 'edited'
+      : system.flags.length
+        ? 'flagged'
+        : 'clear'
+  const canAct = view.connected && !view.busy
+  return h.keyed('section')(
+    system.system,
+    [
+      h.Class('system-card'),
+      h.DataAttribute('status', status),
+      h.AriaLabel(`System ${system.system}`),
+    ],
+    [
+      h.div(
+        [h.Class('system-heading')],
+        [
+          h.span([h.Class('system-dot')], []),
+          h.h2([], [`System ${system.system}`]),
+          edited ? h.span([h.Class('system-tag')], ['Edited']) : h.empty,
+          system.reviewed
+            ? h.span([h.Class('system-tag')], ['Looks right'])
+            : h.empty,
+          h.div(
+            [h.Class('system-actions')],
+            [
+              h.button(
+                [
+                  h.Class('review-button'),
+                  h.Type('button'),
+                  h.Disabled(!view.connected),
+                  h.OnClick(
+                    Message.ClickedMarkReviewed({
+                      system: system.system,
+                      reviewed: !system.reviewed,
+                    }),
+                  ),
+                ],
+                [system.reviewed ? 'Check again' : 'Looks right'],
+              ),
+              h.button(
+                [
+                  h.Class('review-button'),
+                  h.Type('button'),
+                  h.Disabled(!canAct),
+                  h.OnClick(
+                    Message.ClickedAskAboutSystem({ system: system.system }),
+                  ),
+                ],
+                ['Ask'],
+              ),
+              h.button(
+                [
+                  h.Class('review-button primary'),
+                  h.Type('button'),
+                  h.Disabled(!canAct),
+                  h.OnClick(
+                    Message.ClickedFixSystem({ system: system.system }),
+                  ),
+                ],
+                [icon(h, I.Sparkles, 12), 'Fix with AI'],
+              ),
+            ],
+          ),
+        ],
+      ),
+      system.flags.length
+        ? h.p(
+            [h.Class('system-flags')],
+            [edited ? 'When converted: ' : '', system.flags.join(' · ')],
+          )
+        : h.empty,
+      h.div([h.Class('system-label')], ['Original']),
+      h.div(
+        [h.Class('system-scan')],
+        Array.from({ length: system.staves }, (_, staff) =>
+          h.img([
+            h.Alt(`Scan of system ${system.system}, staff ${staff + 1}`),
+            h.Attribute('loading', 'lazy'),
+            h.Src(
+              `/api/documents/${view.documentId}/scans/${system.system}/${staff}`,
+            ),
+          ]),
+        ),
+      ),
+      h.div([h.Class('system-label')], ['Your score']),
+      h.div(
+        [h.Class(`system-result ${view.fresh ? '' : 'stale'}`)],
+        [systemResult(h, system, view.source, view.rendered, urls)],
+      ),
+    ],
+  )
+}
+
+const reviewContent = (
+  review: Review,
+  source: string,
+  rendered: RenderResult,
+  documentId: string | null,
+  filter: Model['reviewFilter'],
+  fresh: boolean,
+  busy: boolean,
+  connected: boolean,
+  confirmingFinish: boolean,
+  h: H,
+): Html => {
+  const view: ReviewView = {
+    review,
+    source,
+    rendered,
+    documentId,
+    filter,
+    fresh,
+    busy,
+    connected,
+    confirmingFinish,
+  }
+  const toCheck = view.review.systems.filter(
+    ({ flags, reviewed }) => flags.length && !reviewed,
+  )
+  const shown = view.filter === 'all' ? view.review.systems : toCheck
+  const urls = urlsFor(view.rendered.pages)
+  const filterButton = (filter: Model['reviewFilter'], label: string) =>
+    h.button(
+      [
+        h.Class('review-filter'),
+        h.Type('button'),
+        h.AriaPressed(String(view.filter === filter)),
+        h.OnClick(Message.ChangedReviewFilter({ filter })),
+      ],
+      [label],
+    )
+  return h.div(
+    [h.Class('review-list')],
+    [
+      h.div(
+        [h.Class('review-heading')],
+        [
+          h.span(
+            [h.Class('review-count')],
+            [
+              toCheck.length
+                ? `${toCheck.length} of ${view.review.systems.length} systems to check`
+                : 'Nothing left to check',
+            ],
+          ),
+          filterButton('flagged', 'To check'),
+          filterButton('all', 'All'),
+          h.div(
+            [h.Class('system-actions')],
+            view.confirmingFinish
+              ? [
+                  h.span(
+                    [h.Class('review-confirm')],
+                    ['Delete the scans for good?'],
+                  ),
+                  h.button(
+                    [
+                      h.Class('review-button'),
+                      h.Type('button'),
+                      h.OnClick(Message.CanceledFinishReview()),
+                    ],
+                    ['Keep them'],
+                  ),
+                  h.button(
+                    [
+                      h.Class('review-button danger'),
+                      h.Type('button'),
+                      h.Disabled(!view.connected || view.busy),
+                      h.OnClick(Message.ConfirmedFinishReview()),
+                    ],
+                    ['Delete scans'],
+                  ),
+                ]
+              : [
+                  h.button(
+                    [
+                      h.Class('review-button'),
+                      h.Type('button'),
+                      h.Title(
+                        'Deletes the scans and the system comments; your score stays',
+                      ),
+                      h.OnClick(Message.ClickedFinishReview()),
+                    ],
+                    [icon(h, I.Check, 12), 'Finish review'],
+                  ),
+                ],
+          ),
+        ],
+      ),
+      shown.length
+        ? h.div(
+            [],
+            shown.map((system) => systemCard(h, view, system, urls)),
+          )
+        : h.div(
+            [h.Class('empty-score')],
+            [
+              icon(h, I.Check, 28),
+              h.p(
+                [],
+                [
+                  'Every flagged system has been checked. The sheet music tab has the whole score.',
+                ],
+              ),
+            ],
+          ),
+    ],
+  )
+}
+
+const lazyReview = createKeyedLazy()
+function reviewPanel(h: H, model: Model): Html {
+  if (!model.review) return h.empty
+  return h.div(
+    [
+      h.Id('review-panel'),
+      h.Role('tabpanel'),
+      h.AriaLabelledBy('review-tab'),
+      h.Class('review-panel'),
+      h.Hidden(activeView(model) !== 'review'),
+    ],
+    // Streaming chat changes the model constantly; only these change the cards.
+    [
+      lazyReview('review', reviewContent, [
+        model.review,
+        model.source,
+        model.rendered,
+        model.documentId,
+        model.reviewFilter,
+        isFresh(model),
+        isBusy(model),
+        model.socket._tag === 'Connected',
+        model.confirmingFinish,
+        h,
+      ]),
+    ],
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Sheet music
 
 // Data URLs and sanitized markup are rebuilt only when a page changes.
@@ -500,7 +842,7 @@ function scoreCanvas(h: H, model: Model): Html {
       h.AriaLabelledBy('score-tab'),
       h.Class('score-canvas'),
       h.AriaBusy(model.rendering),
-      h.Hidden(model.prefs.view !== 'score'),
+      h.Hidden(activeView(model) !== 'score'),
       h.OnMount(MeasureCanvas()),
     ],
     [
@@ -681,6 +1023,12 @@ function chatMessage(
             ],
           )
         : h.empty,
+      message.original === undefined
+        ? h.empty
+        : h.div(
+            [h.Class('message-scan')],
+            [icon(h, I.ScanLine, 11), `Scan of system ${message.original}`],
+          ),
     ],
   )
 }
@@ -861,6 +1209,22 @@ function dock(h: H, model: Model): Html {
       h.form(
         [h.Class('chat-composer'), h.OnSubmit(Message.SubmittedMessage())],
         [
+          model.attachedSystem === null
+            ? h.empty
+            : h.div(
+                [h.Class('selection-chip scan-chip'), h.Role('status')],
+                [
+                  icon(h, I.ScanLine, 12),
+                  h.span([], [`Scan of system ${model.attachedSystem}`]),
+                  iconButton(
+                    h,
+                    'Remove scan',
+                    I.X,
+                    Message.ClearedAttachedSystem(),
+                    { size: 12 },
+                  ),
+                ],
+              ),
           notes.length
             ? h.div(
                 [h.Class('selection-chip'), h.Role('status')],
@@ -884,9 +1248,11 @@ function dock(h: H, model: Model): Html {
           h.textarea([
             h.AriaLabel('Message the music assistant'),
             h.Placeholder(
-              notes.length
-                ? 'What should change for the highlighted notes?'
-                : 'What would you like to create?',
+              model.attachedSystem !== null
+                ? 'What does the assistant need to look at?'
+                : notes.length
+                  ? 'What should change for the highlighted notes?'
+                  : 'What would you like to create?',
             ),
             h.Value(model.input),
             h.Disabled(busy),
@@ -1437,7 +1803,7 @@ export const view = (model: Model, h: H): Document => {
                     h.Role('tabpanel'),
                     h.AriaLabelledBy('source-tab'),
                     h.Class('source-panel'),
-                    h.Hidden(model.prefs.view !== 'source'),
+                    h.Hidden(activeView(model) !== 'source'),
                   ],
                   [
                     h.div(
@@ -1456,6 +1822,7 @@ export const view = (model: Model, h: H): Document => {
                 )
               : h.empty,
             scoreCanvas(h, model),
+            reviewPanel(h, model),
             dock(h, model),
             chatHandle(h, model),
           ],

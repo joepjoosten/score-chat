@@ -45,6 +45,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 // --- A stand-in for the PDF converter ----------------------------------------
 
 const CONVERTED = `\\version "2.24.4"\n\\header { title = "Converted" }\n{ c'4 }\n`
+const SCAN_BYTES = Buffer.from('a scan')
 /** While set, conversions wait, so a test can see them queued. */
 let holdConversions: Promise<void> | undefined
 let releaseConversions = () => {}
@@ -55,7 +56,22 @@ const convert = async (pdf: string, response: ServerResponse) => {
   if (pdf.includes('unreadable')) {
     response.statusCode = 422
     response.end(JSON.stringify({ error: 'No music staves were found.' }))
-  } else response.end(JSON.stringify({ source: CONVERTED }))
+  } else
+    response.end(
+      JSON.stringify({
+        source: CONVERTED,
+        systems: pdf.includes('scanned')
+          ? [
+              {
+                system: 1,
+                confidence: 0.9,
+                flags: [],
+                images: [SCAN_BYTES.toString('base64')],
+              },
+            ]
+          : [],
+      }),
+    )
 }
 
 const mock = createServer(async (request, response) => {
@@ -479,6 +495,22 @@ try {
   for (const { json } of running)
     assert.equal((await settled(json.id)).status, 'done')
   console.log('✓ converts PDFs through the queue')
+
+  // Scans are for the document's owner, and only the ones that exist.
+  const scanned = await upload('%PDF-1.7 scanned', 'scanned.pdf')
+  assert.equal((await settled(scanned.json.id)).status, 'done')
+  const scanUrl = `${APP}/api/documents/${scanned.json.id}/scans/1/0`
+  const scan = await fetch(scanUrl, { headers: { Cookie: cookie } })
+  assert.equal(scan.status, 200)
+  assert.equal(scan.headers.get('Content-Type'), 'image/jpeg')
+  assert.deepEqual(Buffer.from(await scan.arrayBuffer()), SCAN_BYTES)
+  const missing = await fetch(
+    `${APP}/api/documents/${scanned.json.id}/scans/9/0`,
+    { headers: { Cookie: cookie } },
+  )
+  assert.equal(missing.status, 404)
+  assert.equal((await fetch(scanUrl)).status, 401)
+  console.log("✓ serves a conversion's scans to its owner")
 } catch (error) {
   // What the model was told, which usually explains a failed run.
   for (const request of requests)

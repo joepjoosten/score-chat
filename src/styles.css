@@ -1198,3 +1198,181 @@ dialog select:focus {
   background: rgb(246 245 241 / 0.88);
   pointer-events: none;
 }
+
+/* Review: each system of the scan above the same system of the live score. */
+.review-panel {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 20px 28px 140px;
+}
+.review-panel[hidden] {
+  display: none;
+}
+.review-list {
+  width: min(960px, 100%);
+  margin: 0 auto;
+}
+.review-heading,
+.system-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.review-heading {
+  margin-bottom: 14px;
+}
+.review-count {
+  font-weight: 600;
+  margin-right: 6px;
+}
+.review-filter {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 13px;
+  border: 1px solid #d8dcd1;
+  font-size: 12px;
+  color: #7f857a;
+}
+.review-filter[aria-pressed='true'] {
+  color: #435938;
+  background: #fff;
+  border-color: #a9b59c;
+}
+.system-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.review-confirm {
+  font-size: 12px;
+  color: #8a3b2c;
+}
+.review-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid #d8dcd1;
+  border-radius: 7px;
+  background: #fafbf7;
+  font-size: 12px;
+}
+.review-button:disabled {
+  opacity: 0.55;
+}
+.review-button.primary {
+  color: #fff;
+  background: #435938;
+  border-color: #435938;
+}
+.review-button.danger {
+  color: #fff;
+  background: #a2402f;
+  border-color: #a2402f;
+}
+.system-card {
+  background: #fff;
+  border: 1px solid #e3e5dc;
+  border-left: 4px solid #a9b59c;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+.system-card[data-status='flagged'] {
+  border-left-color: #d29a22;
+}
+.system-card[data-status='edited'] {
+  border-left-color: #4b7fb5;
+}
+.system-card[data-status='reviewed'] {
+  border-left-color: #5b8a4a;
+}
+.system-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #a9b59c;
+}
+[data-status='flagged'] .system-dot {
+  background: #d29a22;
+}
+[data-status='edited'] .system-dot {
+  background: #4b7fb5;
+}
+[data-status='reviewed'] .system-dot {
+  background: #5b8a4a;
+}
+.system-heading h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.system-tag {
+  padding: 1px 7px;
+  border: 1px solid #d8dcd1;
+  border-radius: 10px;
+  font-size: 11px;
+  color: #5d6558;
+}
+.system-flags {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #8a6410;
+}
+.system-label {
+  margin: 10px 0 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #7f857a;
+}
+.system-scan img {
+  display: block;
+  width: 100%;
+  min-height: 40px;
+}
+.system-result.stale {
+  opacity: 0.55;
+}
+/* A slice of the full page, which every card of that page shares. */
+.system-crop {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+}
+.system-crop img {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: auto;
+}
+.review-note {
+  margin: 0;
+  font-size: 12px;
+  color: #7f857a;
+}
+.message-scan {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: #5d6558;
+}
+.scan-chip {
+  background: #e9efe3;
+}
+@media (max-width: 720px) {
+  .review-panel {
+    padding: 12px 10px 140px;
+  }
+  .system-actions {
+    margin-left: 0;
+  }
+}
